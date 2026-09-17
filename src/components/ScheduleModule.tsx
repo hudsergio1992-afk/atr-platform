@@ -10,6 +10,7 @@ import {
   SCHEDULE_STATUS_LABEL,
   ScheduleStatus,
   ScheduleTask,
+  UNITS,
 } from "@/lib/types";
 import {
   buildTree,
@@ -69,6 +70,8 @@ interface FormState {
   endFact: string;
   normHours: string;
   progressFact: string;
+  volumeTotal: string;
+  unit: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -81,6 +84,8 @@ const EMPTY_FORM: FormState = {
   endFact: "",
   normHours: "",
   progressFact: "",
+  volumeTotal: "",
+  unit: "",
 };
 
 const FIELD_LABEL: Record<keyof FormState, string> = {
@@ -93,6 +98,8 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   endFact: "Окончание (факт)",
   normHours: "Нормочасы",
   progressFact: "% готовности факт",
+  volumeTotal: "Объём",
+  unit: "Ед. изм.",
 };
 
 function toForm(t: ScheduleTask | null): FormState {
@@ -107,6 +114,8 @@ function toForm(t: ScheduleTask | null): FormState {
     endFact: t.end_fact || "",
     normHours: t.norm_hours != null ? String(t.norm_hours) : "",
     progressFact: t.progress_fact != null ? String(t.progress_fact) : "",
+    volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
+    unit: t.unit || "",
   };
 }
 
@@ -451,6 +460,15 @@ export default function ScheduleModule() {
       setBanner("Нормочасы должны быть неотрицательным числом.");
       return;
     }
+    const vol = form.volumeTotal === "" ? null : Number(form.volumeTotal);
+    if (vol !== null && (!Number.isFinite(vol) || vol < 0)) {
+      setBanner("Объём должен быть неотрицательным числом.");
+      return;
+    }
+    if (vol !== null && !form.unit.trim()) {
+      setBanner("У объёма не указана единица измерения.");
+      return;
+    }
 
     setBanner(null);
     setSaving(true);
@@ -467,6 +485,8 @@ export default function ScheduleModule() {
       end_fact: form.endFact || null,
       norm_hours: nh,
       progress_fact: clampPercent(pf),
+      volume_total: vol,
+      unit: form.unit.trim() || null,
       updated_at: now,
     };
 
@@ -527,6 +547,10 @@ export default function ScheduleModule() {
             <dd className="mono">{n.durationPlan ? `${n.durationPlan} дн.` : "—"}</dd>
             <dt>Нормочасы</dt>
             <dd className="mono">{n.normHours != null ? `${fmtNum(n.normHours)} н/ч` : "—"}</dd>
+            <dt>Объём</dt>
+            <dd className="mono">
+              {n.volumeTotal != null ? `${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim() : "—"}
+            </dd>
             <dt>% план</dt>
             <dd className="mono">{fmtPercent(n.progressPlan)}</dd>
             <dt>% факт</dt>
@@ -674,6 +698,9 @@ export default function ScheduleModule() {
             <span className={`mono${n.deviation != null && n.deviation < 0 ? " is-neg" : ""}`}>
               {fmtDeviation(n.deviation)}
             </span>
+            {n.volumeTotal != null && (
+              <span className="mono">{`${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim()}</span>
+            )}
           </div>
         </div>
         {detailId === n.task.id && <div className="sch-detail-row">{renderDetail(n)}</div>}
@@ -1019,6 +1046,41 @@ export default function ScheduleModule() {
               />
             </div>
           </div>
+
+          <div className="field-row">
+            <div className="field">
+              <label>Объём работы</label>
+              <input
+                type="number"
+                min={0}
+                step="0.001"
+                placeholder="0"
+                disabled={editingIsGroup}
+                value={form.volumeTotal}
+                onChange={(e) => setForm({ ...form, volumeTotal: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>Ед. изм.</label>
+              <input
+                type="text"
+                list="atr-units"
+                placeholder="м³"
+                disabled={editingIsGroup}
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+              />
+              <datalist id="atr-units">
+                {UNITS.map((u) => (
+                  <option key={u} value={u} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+          <p className="hint">
+            Объём нужен для недельных заданий: из него считается, сколько выдать на неделю.
+            Без объёма этап планируется только по датам и процентам.
+          </p>
 
           <div className="calc-box">
             <h4>Расчёт</h4>

@@ -183,6 +183,7 @@ td.name-cell { font-weight: 600; }
 td.addr-cell { color: var(--muted); max-width: 220px; }
 .status-pill {
     display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600;
+    white-space: nowrap;
 }
 .status-pill.st-good { background: var(--st-good-bg); color: var(--st-good-ink); }
 .status-pill.st-warn { background: var(--st-warn-bg); color: var(--st-warn-ink); }
@@ -408,6 +409,90 @@ tr.detail-row td { padding: 0; }
 .gantt-legend .lg-fill { background: var(--st-good-ink); }
 .gantt-legend .lg-fact { height: 5px; background: var(--st-neutral-ink); }
 .gantt-legend .lg-today { width: 2px; height: 14px; background: var(--accent); border-radius: 0; }
+
+/* ---- Недельные задания ---- */
+.wk-weekbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 0 2px;
+}
+.wk-week { display: flex; flex-direction: column; min-width: 190px; }
+.wk-week-title { font-size: 15px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+.wk-week-no {
+    font-size: 11px; font-weight: 600; color: var(--muted); background: var(--surface-2);
+    border-radius: 5px; padding: 1px 6px;
+}
+.wk-week-sub { font-size: 12px; color: var(--muted); }
+.wk-danger { display: flex; justify-content: flex-end; padding: 10px 0 0; }
+
+.wk-head, .wk-row {
+    display: grid;
+    grid-template-columns:
+        minmax(210px, 2.2fr) 128px 122px 62px 74px 96px 104px 118px;
+    align-items: center;
+    min-width: 1000px;
+}
+.wk-head {
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 2;
+}
+.wk-head .wk-c {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); font-weight: 600; padding: 11px 10px;
+}
+.wk-row { border-top: 1px solid var(--border); }
+.wk-row:first-of-type { border-top: none; }
+.wk-row:hover { background: var(--surface-2); }
+.wk-row.is-open { background: var(--surface-2); }
+.wk-c { padding: 7px 10px; font-size: 13px; min-width: 0; }
+.wk-c-name { display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.wk-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-crew { font-size: 11.5px; color: var(--muted); }
+.wk-c-status { cursor: pointer; }
+.wk-c-plan, .wk-c-done, .wk-c-pp, .wk-c-dev { text-align: right; }
+.wk-c-dev.is-neg { color: var(--st-bad-ink); font-weight: 600; }
+.wk-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; color: var(--ink); font-size: 13px; text-align: right;
+}
+.wk-input:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Процент, посчитанный от объёма: показывается вместо поля ввода. */
+.wk-auto { display: block; text-align: right; font-size: 13px; color: var(--muted); }
+.wk-c-meta { display: none; }
+.wk-detail-row { border-top: 1px solid var(--border); min-width: 1000px; }
+
+@media (max-width: 860px) {
+    .wk-head, .wk-row, .wk-detail-row { min-width: 0; }
+    .wk-head { grid-template-columns: 1fr auto; grid-template-areas: "name status"; }
+    .wk-row {
+        grid-template-columns: 1fr 96px 96px;
+        grid-template-areas:
+            "name name status"
+            "meta meta meta"
+            "labels fact pf";
+        padding: 6px 0 10px; row-gap: 4px;
+    }
+    .wk-c-name { grid-area: name; }
+    .wk-c-status { grid-area: status; }
+    .wk-c-fact { grid-area: fact; }
+    .wk-c-pf { grid-area: pf; }
+    .wk-head .wk-c-plan, .wk-head .wk-c-fact, .wk-head .wk-c-done,
+    .wk-head .wk-c-pp, .wk-head .wk-c-pf, .wk-head .wk-c-dev,
+    .wk-row .wk-c-plan, .wk-row .wk-c-done, .wk-row .wk-c-pp, .wk-row .wk-c-dev {
+        display: none;
+    }
+    .wk-name-text { white-space: normal; overflow: visible; }
+    .wk-c-meta {
+        grid-area: meta; display: flex; flex-wrap: wrap; gap: 4px 12px;
+        font-size: 11.5px; color: var(--muted); padding: 0 10px;
+    }
+    .wk-c-meta .is-neg { color: var(--st-bad-ink); }
+    /* Подписи к полям факта, которые на телефоне остаются единственными вводимыми. */
+    .wk-c-fact::before, .wk-c-pf::before {
+        content: attr(data-label); display: block; font-size: 10.5px;
+        text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted);
+        margin-bottom: 3px;
+    }
+}
 
 /* ---- Блок авторасчёта в форме ---- */
 .calc-box {

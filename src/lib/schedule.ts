@@ -78,6 +78,9 @@ export interface TaskNode {
   endFact: string | null;
   durationPlan: number | null;
   normHours: number | null;
+  /** Общий натуральный объём; у группы — сумма, только если единица у детей одна. */
+  volumeTotal: number | null;
+  unit: string | null;
   progressPlan: number | null;
   progressFact: number;
   /** факт − план в процентных пунктах; null, если план не считается. */
@@ -181,6 +184,10 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         task.norm_hours === null || task.norm_hours === undefined
           ? null
           : Number(task.norm_hours);
+      const volumeTotal =
+        task.volume_total === null || task.volume_total === undefined
+          ? null
+          : Number(task.volume_total);
       return {
         task,
         children,
@@ -192,6 +199,8 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         endFact: task.end_fact,
         durationPlan,
         normHours: normHours !== null && Number.isFinite(normHours) ? normHours : null,
+        volumeTotal: volumeTotal !== null && Number.isFinite(volumeTotal) ? volumeTotal : null,
+        unit: task.unit || null,
         progressPlan,
         progressFact,
         deviation,
@@ -211,6 +220,16 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
     const normHours = hoursKnown
       ? children.reduce((s, c) => s + (c.normHours || 0), 0)
       : null;
+
+    // Объёмы складываются, только когда у всех подэтапов с объёмом одна единица:
+    // «120 м³ + 8 т» — бессмыслица, которую нельзя показывать как число.
+    const withVolume = children.filter((c) => c.volumeTotal !== null);
+    const units = new Set(withVolume.map((c) => c.unit || ""));
+    const sameUnit = withVolume.length > 0 && units.size === 1;
+    const volumeTotal = sameUnit
+      ? withVolume.reduce((s, c) => s + (c.volumeTotal || 0), 0)
+      : null;
+    const unit = sameUnit ? withVolume[0].unit : null;
 
     const totalWeight = children.reduce((s, c) => s + c.weight, 0) || children.length;
     const wAvg = (pick: (c: TaskNode) => number | null): number | null => {
@@ -243,6 +262,8 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       endFact,
       durationPlan: daysInclusive(startPlan, endPlan),
       normHours,
+      volumeTotal,
+      unit,
       progressPlan,
       progressFact,
       deviation,
