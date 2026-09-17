@@ -1,4 +1,4 @@
-export type ObjectType = "construction" | "design" | "reconstruction";
+export type ObjectType = "construction" | "design" | "reconstruction" | "equipment_install";
 export type ObjectStatus = "planning" | "active" | "paused" | "done";
 
 export interface HistoryEntry {
@@ -26,6 +26,7 @@ export const TYPE_LABEL: Record<ObjectType, string> = {
   construction: "Строительство",
   design: "Проектирование",
   reconstruction: "Реконструкция",
+  equipment_install: "Монтаж оборудования",
 };
 
 export const STATUS_LABEL: Record<ObjectStatus, string> = {
