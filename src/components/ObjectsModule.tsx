@@ -27,7 +27,7 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   name: "",
   address: "",
-  type: "elevator",
+  type: "construction",
   contractNumber: "",
   contractDate: "",
   contractAmount: "",
@@ -356,10 +356,9 @@ export default function ObjectsModule() {
         />
         <select className="filter" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
           <option value="">Все типы</option>
-          <option value="elevator">Элеватор</option>
-          <option value="drying">Сушильный комплекс</option>
-          <option value="silo">Силос</option>
-          <option value="seed_plant">Семенной завод</option>
+          <option value="construction">Строительство</option>
+          <option value="design">Проектирование</option>
+          <option value="reconstruction">Реконструкция</option>
         </select>
         <select className="filter" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Все статусы</option>
@@ -502,10 +501,9 @@ export default function ObjectsModule() {
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as ObjectType })}
             >
-              <option value="elevator">Элеватор</option>
-              <option value="drying">Сушильный комплекс</option>
-              <option value="silo">Силос</option>
-              <option value="seed_plant">Семенной завод</option>
+              <option value="construction">Строительство</option>
+              <option value="design">Проектирование</option>
+              <option value="reconstruction">Реконструкция</option>
             </select>
           </div>
           <div className="field-row">
