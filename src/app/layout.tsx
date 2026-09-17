@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { MODULES } from "@/lib/types";
+import ModuleNav from "@/components/ModuleNav";
 
 export const metadata: Metadata = {
   title: "Стройплатформа АТР",
@@ -22,19 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </span>
           </div>
 
-          <nav className="modnav" aria-label="Модули">
-            {MODULES.map((m) =>
-              m.ready ? (
-                <span key={m.key} className="modtab active">
-                  {m.label}
-                </span>
-              ) : (
-                <span key={m.key} className="modtab" title="Скоро">
-                  {m.label} <span className="soon">скоро</span>
-                </span>
-              )
-            )}
-          </nav>
+          <ModuleNav />
 
           {children}
         </div>

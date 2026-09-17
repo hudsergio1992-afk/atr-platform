@@ -184,6 +184,10 @@ td.addr-cell { color: var(--muted); max-width: 220px; }
 .status-pill {
     display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600;
 }
+.status-pill.st-good { background: var(--st-good-bg); color: var(--st-good-ink); }
+.status-pill.st-warn { background: var(--st-warn-bg); color: var(--st-warn-ink); }
+.status-pill.st-bad { background: var(--st-bad-bg); color: var(--st-bad-ink); }
+.status-pill.st-neutral { background: var(--st-neutral-bg); color: var(--st-neutral-ink); }
 tr.detail-row td { padding: 0; }
 .detail {
     background: var(--surface-2); padding: 16px 20px; border-top: 1px dashed var(--border);
@@ -244,8 +248,218 @@ tr.detail-row td { padding: 0; }
 .panel-foot { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
 .panel-foot .btn { flex: 1; }
 
+/* ---- Общие мелочи ---- */
+.hint { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+.modtab.link { text-decoration: none; cursor: pointer; }
+.modtab.link:hover { background: var(--surface-2); color: var(--ink); }
+.modtab.link.active { background: var(--accent); color: var(--accent-ink); }
+.modtab.link.active:hover { background: var(--accent-hover); color: var(--accent-ink); }
+
+/* ---- Выбор объекта ---- */
+.obj-picker {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 16px 0 2px;
+}
+.obj-picker label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.obj-picker select.filter { flex: 1 1 280px; max-width: 460px; font-weight: 600; }
+.obj-picker-meta { font-size: 12.5px; color: var(--muted); }
+
+/* ---- Переключатель вида ---- */
+.seg {
+    display: inline-flex; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 2px; gap: 2px;
+}
+.seg-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 12.5px; font-weight: 600; padding: 7px 12px; border-radius: 6px;
+    white-space: nowrap;
+}
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+
+/* ---- Строки графика (дерево и таблица на одной сетке) ---- */
+.sch-wrap {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+    overflow-x: auto;
+}
+.sch-head, .sch-row {
+    display: grid;
+    grid-template-columns:
+        minmax(220px, 2.2fr) 152px 52px 64px 152px 66px 108px 104px 118px;
+    align-items: center;
+    min-width: 1022px;
+}
+.sch-head {
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 2;
+}
+.sch-head .sch-c {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); font-weight: 600; padding: 11px 10px;
+}
+.sch-head.is-sortable .sch-c {
+    background: none; border: none; text-align: left; cursor: pointer; font-family: inherit;
+}
+.sch-head.is-sortable .sch-c:hover { color: var(--ink); }
+.sch-row { border-top: 1px solid var(--border); cursor: pointer; }
+.sch-row:first-of-type { border-top: none; }
+.sch-row:hover { background: var(--surface-2); }
+.sch-row.is-open { background: var(--surface-2); }
+.sch-row.is-group .sch-c-name { font-weight: 700; }
+.sch-c { padding: 9px 10px; font-size: 13px; min-width: 0; }
+.sch-c-name { display: flex; align-items: center; gap: 6px; }
+.sch-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sch-parent { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.sch-caret {
+    flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; padding: 0;
+    border: none; background: none; color: var(--muted); cursor: pointer; font-size: 11px;
+}
+.sch-caret.placeholder { cursor: default; }
+.sch-c-dur, .sch-c-nh, .sch-c-pp, .sch-c-dev { text-align: right; }
+.sch-c-dev.is-neg { color: var(--st-bad-ink); font-weight: 600; }
+.sch-c-pf { display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
+.sch-bar {
+    flex: 1 1 auto; min-width: 26px; height: 6px; border-radius: 3px;
+    background: var(--surface-3); overflow: hidden;
+}
+.sch-bar-fill { display: block; height: 100%; border-radius: 3px; }
+.sch-bar-fill.st-good { background: var(--st-good-ink); }
+.sch-bar-fill.st-bad { background: var(--st-bad-ink); }
+.sch-bar-fill.st-warn { background: var(--st-warn-ink); }
+.sch-bar-fill.st-neutral { background: var(--st-neutral-ink); }
+.sch-c-meta { display: none; }
+.sch-detail-row { border-top: 1px solid var(--border); min-width: 1022px; }
+.sch-detail-solo { margin-top: 12px; min-width: 0; }
+.sch-detail-solo .detail { border-top: none; }
+
+/* ---- Диаграмма Ганта ---- */
+.gantt {
+    display: flex; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface); overflow: hidden;
+}
+.gantt-names { flex: 0 0 260px; min-width: 0; border-right: 1px solid var(--border); background: var(--surface); }
+.gantt-names-head {
+    height: 44px; display: flex; align-items: flex-end; padding: 0 10px 6px;
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); font-weight: 600;
+}
+.gantt-name {
+    /* Именно block, а не flex: в flex-контейнере не работает text-overflow. */
+    height: 30px; line-height: 30px; display: block; font-size: 12.5px; cursor: pointer;
+    padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border-top: 1px solid transparent;
+}
+.gantt-name:hover { background: var(--surface-2); }
+.gantt-name.is-group { font-weight: 700; }
+.gantt-name.is-sel { background: var(--surface-3); }
+.gantt-scroll { flex: 1 1 auto; overflow-x: auto; }
+.gantt-canvas { position: relative; }
+.gantt-head { height: 44px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.gantt-months { position: relative; height: 22px; }
+.gantt-month {
+    position: absolute; top: 0; height: 22px; display: flex; align-items: center;
+    border-left: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
+    font-weight: 600; overflow: hidden; white-space: nowrap;
+}
+/* Подпись месяца остаётся видимой, когда его начало ушло за левый край прокрутки. */
+.gantt-month span { padding-left: 6px; position: sticky; left: 0; }
+.gantt-ticks { position: relative; height: 22px; }
+.gantt-tick {
+    position: absolute; top: 0; height: 22px; display: flex; align-items: center;
+    justify-content: center; font-size: 10px; color: var(--muted);
+    border-left: 1px solid var(--border); overflow: hidden;
+}
+.gantt-tick.is-weekend { background: var(--surface-3); }
+.gantt-body { position: relative; }
+.gantt-weekend { position: absolute; top: 0; bottom: 0; background: var(--surface-2); z-index: 0; }
+.gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); z-index: 3; opacity: 0.75; }
+.gantt-row { position: relative; height: 30px; z-index: 1; cursor: pointer; }
+.gantt-row:hover { background: rgb(128 128 128 / 0.08); }
+.gantt-row.is-sel { background: rgb(128 128 128 / 0.14); }
+.gantt-bar { position: absolute; z-index: 2; }
+.gantt-bar.plan {
+    top: 6px; height: 11px; border-radius: 3px; border: 1px solid var(--border);
+    background: var(--surface-3); overflow: hidden;
+}
+.gantt-bar.plan.is-group { border-radius: 2px; }
+.gantt-fill { height: 100%; }
+.gantt-bar.plan.st-good { border-color: var(--st-good-ink); }
+.gantt-bar.plan.st-good .gantt-fill { background: var(--st-good-ink); }
+.gantt-bar.plan.st-bad { border-color: var(--st-bad-ink); }
+.gantt-bar.plan.st-bad .gantt-fill { background: var(--st-bad-ink); }
+.gantt-bar.plan.st-neutral { border-color: var(--st-neutral-ink); }
+.gantt-bar.plan.st-neutral .gantt-fill { background: var(--st-neutral-ink); }
+.gantt-bar.fact { top: 20px; height: 5px; border-radius: 3px; opacity: 0.85; }
+.gantt-bar.fact.st-good { background: var(--st-good-ink); }
+.gantt-bar.fact.st-bad { background: var(--st-bad-ink); }
+.gantt-bar.fact.st-neutral { background: var(--st-neutral-ink); }
+.gantt-nodate {
+    position: absolute; left: 8px; top: 7px; font-size: 11px; color: var(--muted);
+    white-space: nowrap;
+}
+.gantt-legend {
+    display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 2px 0;
+    font-size: 12px; color: var(--muted);
+}
+.gantt-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.gantt-legend i { display: inline-block; width: 16px; height: 9px; border-radius: 2px; }
+.gantt-legend .lg-plan { border: 1px solid var(--st-neutral-ink); background: var(--surface-3); }
+.gantt-legend .lg-fill { background: var(--st-good-ink); }
+.gantt-legend .lg-fact { height: 5px; background: var(--st-neutral-ink); }
+.gantt-legend .lg-today { width: 2px; height: 14px; background: var(--accent); border-radius: 0; }
+
+/* ---- Блок авторасчёта в форме ---- */
+.calc-box {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px;
+}
+.calc-box h4 {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); margin: 0 0 8px; font-weight: 600;
+}
+.calc-box dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; }
+.calc-box dt { color: var(--muted); }
+.calc-box dd { margin: 0; text-align: right; }
+.calc-box .hint { margin-top: 8px; }
+.field input:disabled, .field select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (max-width: 860px) {
+    .sch-head, .sch-row, .sch-detail-row { min-width: 0; }
+    .sch-head {
+        grid-template-columns: 1fr auto;
+        grid-template-areas: "name status";
+    }
+    .sch-row {
+        grid-template-columns: 1fr auto;
+        grid-template-areas: "name status" "meta meta";
+        padding: 4px 0 8px;
+    }
+    .sch-c-name { grid-area: name; }
+    .sch-c-status { grid-area: status; }
+    .sch-head .sch-c-plan, .sch-head .sch-c-dur, .sch-head .sch-c-nh,
+    .sch-head .sch-c-fact, .sch-head .sch-c-pp, .sch-head .sch-c-pf, .sch-head .sch-c-dev,
+    .sch-row .sch-c-plan, .sch-row .sch-c-dur, .sch-row .sch-c-nh,
+    .sch-row .sch-c-fact, .sch-row .sch-c-pp, .sch-row .sch-c-pf, .sch-row .sch-c-dev {
+        display: none;
+    }
+    .sch-name-text { white-space: normal; overflow: visible; }
+    .sch-c-name { align-items: flex-start; }
+    .sch-c-meta {
+        grid-area: meta; display: flex; flex-wrap: wrap; gap: 4px 12px;
+        font-size: 11.5px; color: var(--muted); padding: 0 10px;
+    }
+    .sch-c-meta .is-neg { color: var(--st-bad-ink); }
+    .gantt-names { flex: 0 0 132px; min-width: 0; }
+    .gantt-name { font-size: 11.5px; }
+    .seg-btn { padding: 7px 10px; font-size: 12px; }
+    .calc-box dd { text-align: left; }
+}
+
 @media (max-width: 720px) {
     body { padding: 0 12px 40px; }
+    /* Плашка роли не переносилась и растягивала страницу шире экрана телефона. */
+    .role-chip { white-space: normal; }
     .table-wrap { display: none; }
     .cards { display: flex; }
     .field-row { grid-template-columns: 1fr; }

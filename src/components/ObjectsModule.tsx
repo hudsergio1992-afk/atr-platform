@@ -11,6 +11,7 @@ import {
   STATUS_LABEL,
   TYPE_LABEL,
 } from "@/lib/types";
+import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 
 interface FormState {
   name: string;
@@ -47,35 +48,6 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   endDatePlanned: "Окончание",
   status: "Статус",
 };
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const p = iso.split("-");
-  if (p.length !== 3) return iso;
-  return `${p[2]}.${p[1]}.${p[0]}`;
-}
-
-function fmtMoney(n: number | string | null | undefined): string {
-  if (n === undefined || n === null || n === "") return "—";
-  const num = Number(n);
-  if (isNaN(num)) return "—";
-  return num.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) + " ₽";
-}
-
-function fmtDateTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 function toForm(o: ConstructionObject | null): FormState {
   if (!o) return { ...EMPTY_FORM };
