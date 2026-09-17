@@ -360,6 +360,8 @@ export default function ObjectsModule() {
           <option value="design">Проектирование</option>
           <option value="reconstruction">Реконструкция</option>
           <option value="equipment_install">Монтаж оборудования</option>
+          <option value="supervision">Шеф-монтаж</option>
+          <option value="commissioning">Пусконаладка</option>
         </select>
         <select className="filter" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Все статусы</option>
@@ -506,6 +508,8 @@ export default function ObjectsModule() {
               <option value="design">Проектирование</option>
               <option value="reconstruction">Реконструкция</option>
               <option value="equipment_install">Монтаж оборудования</option>
+              <option value="supervision">Шеф-монтаж</option>
+              <option value="commissioning">Пусконаладка</option>
             </select>
           </div>
           <div className="field-row">
