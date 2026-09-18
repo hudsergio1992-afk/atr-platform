@@ -1,6 +1,10 @@
 -- Схема БД «Стройплатформы АТР» для Supabase (SQL Editor).
 -- Скрипт идемпотентен: повторный запуск ничего не ломает.
 
+-- Генератор идентификаторов. В свежих проектах Supabase есть по умолчанию,
+-- в старых — нет, и без него создание таблиц падает на первой же строке.
+create extension if not exists pgcrypto;
+
 -- ── Модуль 1: Объекты ────────────────────────────────────────────────────────
 create table if not exists public.objects (
   id                uuid primary key default gen_random_uuid(),

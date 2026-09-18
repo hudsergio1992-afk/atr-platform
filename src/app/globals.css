@@ -513,6 +513,10 @@ tr.detail-row td { padding: 0; }
 .setup-steps { margin: 0 0 14px; padding-left: 20px; font-size: 13.5px; }
 .setup-steps li { margin-bottom: 6px; }
 .setup-steps a { color: var(--accent); }
+.setup-project {
+    background: var(--surface-2); border-radius: 8px; padding: 10px 12px;
+    font-size: 13px; margin: 0 0 12px !important;
+}
 .setup-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .setup-actions .btn { text-decoration: none; display: inline-flex; align-items: center; }
 .setup-sql {

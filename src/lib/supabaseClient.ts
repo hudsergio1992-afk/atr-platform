@@ -11,3 +11,19 @@ console.warn(
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
+
+/**
+ * Идентификатор проекта Supabase, к которому подключён сайт.
+ * Нужен, чтобы владелец базы не готовил таблицы в соседнем проекте:
+ * из адреса https://abcdefgh.supabase.co получается «abcdefgh».
+ */
+export function supabaseProjectRef(): string | null {
+  if (!supabaseUrl) return null;
+  try {
+    const host = new URL(supabaseUrl).hostname;
+    const ref = host.split(".")[0];
+    return ref && ref !== "your-project" ? ref : null;
+  } catch {
+    return null;
+  }
+}

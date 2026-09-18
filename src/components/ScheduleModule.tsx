@@ -912,7 +912,7 @@ export default function ScheduleModule() {
           {banner}
         </div>
       )}
-      {schemaMissing && <SchemaSetup />}
+      {schemaMissing && <SchemaSetup onRecheck={() => loadTasks(objectId)} />}
 
       <div className="obj-picker">
         <label htmlFor="sch-object">Объект</label>

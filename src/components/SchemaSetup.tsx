@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabaseProjectRef } from "@/lib/supabaseClient";
 
 /**
  * Показывается, когда в базе нет таблиц под данные модуля.
@@ -8,7 +9,14 @@ import { useEffect, useState } from "react";
  * поэтому владелец базы выполняет подготовку один раз. Здесь для этого
  * есть всё: текст, кнопка копирования и ссылка прямо в редактор Supabase.
  */
-export default function SchemaSetup() {
+export default function SchemaSetup({ onRecheck }: { onRecheck?: () => void }) {
+  const projectRef = supabaseProjectRef();
+  // Ссылка на редактор запросов именно того проекта, в который ходит сайт:
+  // с «_» Supabase откроет последний использованный, а он бывает соседним.
+  const editorUrl = projectRef
+    ? `https://supabase.com/dashboard/project/${projectRef}/sql/new`
+    : "https://supabase.com/dashboard/project/_/sql/new";
+
   const [sql, setSql] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -54,10 +62,16 @@ export default function SchemaSetup() {
         </li>
         <li>
           Откройте{" "}
-          <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noreferrer">
+          <a href={editorUrl} target="_blank" rel="noreferrer">
             редактор запросов Supabase
-          </a>{" "}
-          и выберите свой проект.
+          </a>
+          {projectRef ? (
+            <>
+              {" "}— ссылка ведёт сразу в нужный проект.
+            </>
+          ) : (
+            <> и выберите свой проект.</>
+          )}
         </li>
         <li>Вставьте текст в пустое окно (Ctrl+V) и нажмите зелёную кнопку <b>Run</b>.</li>
         <li>
@@ -65,6 +79,13 @@ export default function SchemaSetup() {
           страницу.
         </li>
       </ol>
+      {projectRef && (
+        <p className="setup-project">
+          Сайт подключён к проекту Supabase <b className="mono">{projectRef}</b>. Готовить
+          хранилище нужно именно в нём: если запустить текст в другом проекте, здесь ничего
+          не изменится.
+        </p>
+      )}
       <div className="setup-actions">
         <button className="btn btn-primary" style={{ marginLeft: 0 }} onClick={copy} disabled={!sql}>
           {copied ? "Скопировано" : "Скопировать"}
@@ -75,6 +96,11 @@ export default function SchemaSetup() {
         <a className="btn btn-ghost" href="/schema.sql" target="_blank" rel="noreferrer">
           Открыть файлом
         </a>
+        {onRecheck && (
+          <button className="btn btn-ghost" onClick={onRecheck}>
+            Проверить снова
+          </button>
+        )}
       </div>
       {failed && (
         <p className="hint">
@@ -85,7 +111,8 @@ export default function SchemaSetup() {
       {open && sql && <pre className="setup-sql">{sql}</pre>}
       <p className="hint">
         Существующие данные это не затронет: текст написан так, что уже созданное он не трогает,
-        а добавляет только недостающее.
+        а добавляет только недостающее. Если Supabase покажет красную ошибку — пришлите её текст,
+        разберём.
       </p>
     </div>
   );

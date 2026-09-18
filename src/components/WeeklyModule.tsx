@@ -854,7 +854,7 @@ export default function WeeklyModule() {
           {banner}
         </div>
       )}
-      {schemaMissing && <SchemaSetup />}
+      {schemaMissing && <SchemaSetup onRecheck={() => loadWeekData(objectId)} />}
 
       <div className="obj-picker">
         <label htmlFor="wk-object">Объект</label>
