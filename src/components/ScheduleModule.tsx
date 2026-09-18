@@ -111,7 +111,7 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   startFact: "Начало (факт)",
   endFact: "Окончание (факт)",
   progressFact: "% готовности факт",
-  tracking: "Способ учёта",
+  tracking: "Что выдавать в задании",
   kind: "Происхождение работы",
   reason: "Основание",
   volumeTotal: "Объём",
@@ -223,6 +223,7 @@ export default function ScheduleModule() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [trackingTouched, setTrackingTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadObjects = useCallback(async () => {
@@ -403,7 +404,37 @@ export default function ScheduleModule() {
     setPendingDeleteId(null);
   }
 
+  /** Объём, отвечающий текущему проценту готовности. Считается, не хранится. */
+  const doneVolume = useMemo(() => {
+    const total = Number(form.volumeTotal);
+    const pf = Number(form.progressFact);
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(pf)) return "";
+    return String(Math.round(((total * pf) / 100) * 1000) / 1000);
+  }, [form.volumeTotal, form.progressFact]);
+
+  /** Ввели выполненный объём — процент готовности пересчитывается сам. */
+  function setDoneVolume(value: string) {
+    const total = Number(form.volumeTotal);
+    const done = Number(value);
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(done)) return;
+    setForm((f) => ({ ...f, progressFact: String(clampPercent((done / total) * 100)) }));
+  }
+
+  /**
+   * Объём и способ учёта связаны: указали объём — значит работу меряют объёмом.
+   * Без этого этап с объёмом оставался «процентным», и недельное задание
+   * не выдавало по нему ни кубов, ни тонн.
+   */
+  function setVolume(value: string) {
+    setForm((f) => {
+      const filled = value.trim() !== "" && Number(value) > 0;
+      if (trackingTouched || editingIsGroup) return { ...f, volumeTotal: value };
+      return { ...f, volumeTotal: value, tracking: filled ? "volume" : "percent" };
+    });
+  }
+
   function openPanel(id: string | null, presetParent?: string) {
+    setTrackingTouched(false);
     setEditingId(id);
     const t = id ? tasks.find((x) => x.id === id) || null : null;
     if (t) {
@@ -729,7 +760,7 @@ export default function ScheduleModule() {
               {KIND_LABEL[n.task.kind === "extra" ? "extra" : "plan"]}
               {n.task.kind === "extra" && n.task.reason ? ` — ${n.task.reason}` : ""}
             </dd>
-            <dt>Учёт</dt>
+            <dt>В задание выдаётся</dt>
             <dd>{TRACKING_LABEL[n.tracking]}</dd>
             <dt>Объём</dt>
             <dd className="mono">
@@ -1381,19 +1412,24 @@ export default function ScheduleModule() {
           )}
 
           <div className="field">
-            <label>Как отмечаем выполнение</label>
+            <label>Что выдавать в недельном задании</label>
             <select
               value={form.tracking}
               disabled={editingIsGroup}
-              onChange={(e) => setForm({ ...form, tracking: e.target.value as TrackingMode })}
+              onChange={(e) => {
+                setTrackingTouched(true);
+                setForm({ ...form, tracking: e.target.value as TrackingMode });
+              }}
             >
-              <option value="volume">По объёму работ</option>
-              <option value="percent">По проценту готовности</option>
+              <option value="volume">Объём на неделю</option>
+              <option value="percent">Только процент</option>
             </select>
             <p className="hint">
               {form.tracking === "volume"
-                ? "Прораб сдаёт натуральный объём за неделю, процент готовности считается сам. Подходит бетону, металлу, сваям, кабелю."
-                : "Прораб двигает процент вручную. Так учитываются штучные, но длительные работы: силос один, а собирается месяц."}
+                ? "В задание попадёт доля объёма, приходящаяся на неделю. Подходит бетону, металлу, сваям, кабелю."
+                : "В задание попадёт цель в процентах, без дробления объёма. Так удобнее штучным работам: силос один, а собирается месяц."}{" "}
+              Отмечать выполнение всё равно можно и объёмом, и процентом — они пересчитываются
+              друг из друга.
             </p>
           </div>
 
@@ -1407,7 +1443,7 @@ export default function ScheduleModule() {
                 placeholder="0"
                 disabled={editingIsGroup}
                 value={form.volumeTotal}
-                onChange={(e) => setForm({ ...form, volumeTotal: e.target.value })}
+                onChange={(e) => setVolume(e.target.value)}
               />
             </div>
             <div className="field">
@@ -1427,24 +1463,38 @@ export default function ScheduleModule() {
               </datalist>
             </div>
           </div>
-          <div className="field">
-            <label>% готовности факт</label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step="1"
-              placeholder="0"
-              disabled={editingIsGroup || form.tracking === "volume"}
-              value={form.progressFact}
-              onChange={(e) => setForm({ ...form, progressFact: e.target.value })}
-            />
-            <p className="hint">
-              {form.tracking === "volume"
-                ? "При учёте по объёму процент не вводится: он считается от сданного объёма."
-                : "Процент двигает прораб — в карточке этапа или в недельном задании."}
-            </p>
+          <div className="field-row">
+            <div className="field">
+              <label>% готовности факт</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="1"
+                placeholder="0"
+                disabled={editingIsGroup}
+                value={form.progressFact}
+                onChange={(e) => setForm({ ...form, progressFact: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>Выполнено, объём</label>
+              <input
+                type="number"
+                min={0}
+                step="0.001"
+                placeholder={form.volumeTotal ? "0" : "нужен объём работы"}
+                disabled={editingIsGroup || !form.volumeTotal}
+                value={doneVolume}
+                onChange={(e) => setDoneVolume(e.target.value)}
+              />
+            </div>
           </div>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Эти два поля — одно и то же с разных сторон: поставите процент — увидите объём,
+            впишете объём — пересчитается процент. Если объём работы не задан, готовность
+            отмечается только процентом.
+          </p>
 
           <div className="calc-box">
             <h4>Расчёт</h4>

@@ -33,6 +33,7 @@ import {
   fmtDeviation,
   fmtNum,
   fmtPercent,
+  fmtRange,
   plural,
 } from "@/lib/format";
 import { readSetting, useToday, writeSetting } from "@/lib/useClient";
@@ -130,7 +131,7 @@ export default function WeeklyModule() {
   const [saving, setSaving] = useState(false);
 
   // Черновые значения полей факта: строка правится в таблице и пишется в БД по уходу из поля.
-  const [factDraft, setFactDraft] = useState<Record<string, { vf?: string; pf?: string }>>({});
+  const [factDraft, setFactDraft] = useState<Record<string, { vf?: string; pf?: string; last?: "vf" | "pf" }>>({});
 
   const weekStart = weekOverride ?? (today ? mondayOf(today) : null);
 
@@ -322,8 +323,8 @@ export default function WeeklyModule() {
     const vfRaw = draft.vf;
     const pfRaw = draft.pf;
 
-    const vf = vfRaw === undefined ? item.volume_fact : vfRaw === "" ? null : Number(vfRaw);
-    const pf = pfRaw === undefined ? item.progress_fact : pfRaw === "" ? null : Number(pfRaw);
+    let vf = vfRaw === undefined ? item.volume_fact : vfRaw === "" ? null : Number(vfRaw);
+    let pf = pfRaw === undefined ? item.progress_fact : pfRaw === "" ? null : Number(pfRaw);
     if (vf !== null && (!Number.isFinite(vf) || vf < 0)) {
       setBanner("Фактический объём должен быть неотрицательным числом.");
       return;
@@ -332,6 +333,24 @@ export default function WeeklyModule() {
       setBanner("% готовности факт должен быть от 0 до 100.");
       return;
     }
+
+    // Объём и процент — две стороны одного: заполнил любое, второе считается само.
+    const node = item.task_id ? nodeById.get(item.task_id) : null;
+    const total = node && node.volumeTotal !== null && node.volumeTotal > 0 ? node.volumeTotal : null;
+    if (total !== null) {
+      // Сколько по этому этапу набрано другими строками — их процент уже «занят».
+      const doneElsewhere = Math.max(
+        0,
+        (doneByTask.get(item.task_id as string) || 0) - Number(item.volume_fact || 0)
+      );
+      if (draft.last === "vf" && vf !== null) {
+        pf = clampPercent(((doneElsewhere + vf) / total) * 100);
+      } else if (draft.last === "pf" && pf !== null) {
+        const target = (total * pf) / 100 - doneElsewhere;
+        vf = Math.max(0, Math.round(target * 1000) / 1000);
+      }
+    }
+
     if (vf === item.volume_fact && pf === item.progress_fact) {
       setFactDraft((cur) => {
         const next = { ...cur };
@@ -383,13 +402,15 @@ export default function WeeklyModule() {
       if (!node) continue;
 
       let progress: number | null = null;
-      if (node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0) {
+      // Проценты, введённые прорабом, главнее: он мог отметить готовность и так,
+      // и через объём — при вводе любой из величин вторая уже пересчитана.
+      const percents = rows
+        .map((r) => (r.progress_fact === null ? null : Number(r.progress_fact)))
+        .filter((v): v is number => v !== null);
+      if (percents.length) {
+        progress = clampPercent(Math.max(...percents));
+      } else if (node.volumeTotal !== null && node.volumeTotal > 0) {
         progress = progressFromVolume(node.volumeTotal, doneByTask.get(taskId) || 0);
-      } else {
-        const percents = rows
-          .map((r) => (r.progress_fact === null ? null : Number(r.progress_fact)))
-          .filter((v): v is number => v !== null);
-        if (percents.length) progress = clampPercent(Math.max(...percents));
       }
       if (progress === null) continue;
       if (Math.abs(progress - node.progressFact) < 0.05) continue;
@@ -476,7 +497,7 @@ export default function WeeklyModule() {
     }
     const done = doneByTask.get(taskId) || 0;
     const left =
-      node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0
+      node.volumeTotal !== null && node.volumeTotal > 0
         ? Math.max(0, Math.round((node.volumeTotal - done) * 1000) / 1000)
         : null;
     setForm((f) => ({
@@ -644,6 +665,21 @@ export default function WeeklyModule() {
           <dl>
             <dt>Этап графика</dt>
             <dd>{node ? node.task.name : "вне графика"}</dd>
+            {node && (
+              <>
+                <dt>Сроки этапа (план)</dt>
+                <dd className="mono">{fmtRange(node.startPlan, node.endPlan)}</dd>
+                <dt>Объём этапа</dt>
+                <dd className="mono">
+                  {node.volumeTotal !== null && node.volumeTotal > 0
+                    ? `${fmtNum(doneByTask.get(node.task.id) || 0, 3)} из ${fmtNum(
+                        node.volumeTotal,
+                        3
+                      )} ${node.unit || ""}`.trim()
+                    : "не задан — готовность отмечается процентом"}
+                </dd>
+              </>
+            )}
             <dt>Объём план</dt>
             <dd className="mono">
               {item.volume_plan != null ? `${fmtNum(item.volume_plan, 3)} ${item.unit || ""}`.trim() : "—"}
@@ -662,9 +698,11 @@ export default function WeeklyModule() {
             <dd className="mono">
               план {fmtPercent(item.progress_plan)} · факт{" "}
               {fmtPercent(
-                node && node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0
+                item.progress_fact != null
+                  ? Number(item.progress_fact)
+                  : node && node.volumeTotal !== null && node.volumeTotal > 0
                   ? progressFromVolume(node.volumeTotal, doneByTask.get(item.task_id as string) || 0)
-                  : item.progress_fact
+                  : null
               )}
             </dd>
             <dt>Отклонение</dt>
@@ -753,13 +791,15 @@ export default function WeeklyModule() {
     // Где есть натуральный объём, процент готовности однозначно из него и считается —
     // руками его вводят только для работ без измеримого объёма.
     const node = item.task_id ? nodeById.get(item.task_id) : null;
-    const volumeDriven =
-      hasVolume && node != null && node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0;
-    const factPercent = volumeDriven
-      ? progressFromVolume(node!.volumeTotal, doneByTask.get(item.task_id as string) || 0)
-      : item.progress_fact != null
-      ? Number(item.progress_fact)
-      : null;
+    // Пересчёт возможен всегда, когда у этапа известен общий объём — способ
+    // планирования на это не влияет: прораб волен вводить любую из двух величин.
+    const canConvert = node != null && node.volumeTotal !== null && node.volumeTotal > 0;
+    const factPercent =
+      item.progress_fact != null
+        ? Number(item.progress_fact)
+        : canConvert
+        ? progressFromVolume(node!.volumeTotal, doneByTask.get(item.task_id as string) || 0)
+        : null;
     const deviation =
       item.progress_plan != null && factPercent != null
         ? Math.round((factPercent - Number(item.progress_plan)) * 10) / 10
@@ -779,7 +819,25 @@ export default function WeeklyModule() {
                 </span>
               )}
             </span>
-            {item.crew && <span className="wk-crew">{item.crew}</span>}
+            <span className="wk-sub">
+              {node ? (
+                <>
+                  <span className="mono">{fmtRange(node.startPlan, node.endPlan)}</span>
+                  {node.volumeTotal !== null && node.volumeTotal > 0 ? (
+                    <span className="mono">
+                      {" · "}
+                      {fmtNum(doneByTask.get(item.task_id as string) || 0, 3)} из{" "}
+                      {fmtNum(node.volumeTotal, 3)} {node.unit || ""}
+                    </span>
+                  ) : (
+                    <span title="У этапа не задан общий объём — готовность отмечается процентом">
+                      {" · только процент"}
+                    </span>
+                  )}
+                </>
+              ) : null}
+              {item.crew && <span className="wk-crew">{item.crew}</span>}
+            </span>
           </div>
           <div className="wk-c wk-c-plan mono">
             {item.volume_plan != null ? `${fmtNum(item.volume_plan, 3)} ${item.unit || ""}`.trim() : "—"}
@@ -791,11 +849,19 @@ export default function WeeklyModule() {
               min={0}
               step="0.001"
               inputMode="decimal"
-              placeholder={hasVolume ? "0" : "—"}
+              placeholder={canConvert || hasVolume ? "0" : "—"}
+              title={
+                canConvert
+                  ? "Введите объём — процент готовности пересчитается сам"
+                  : "У этапа не задан общий объём"
+              }
               disabled={locked}
               value={vfValue}
               onChange={(e) =>
-                setFactDraft((cur) => ({ ...cur, [item.id]: { ...cur[item.id], vf: e.target.value } }))
+                setFactDraft((cur) => ({
+                  ...cur,
+                  [item.id]: { ...cur[item.id], vf: e.target.value, last: "vf" },
+                }))
               }
               onBlur={() => saveFact(item)}
               onKeyDown={(e) => {
@@ -806,30 +872,32 @@ export default function WeeklyModule() {
           <div className="wk-c wk-c-done mono">{fmtPercent(d.completion)}</div>
           <div className="wk-c wk-c-pp mono">{fmtPercent(item.progress_plan)}</div>
           <div className="wk-c wk-c-pf" data-label="% факт">
-            {volumeDriven ? (
-              <span className="wk-auto mono" title="Считается от набранного объёма">
-                {fmtPercent(factPercent)}
-              </span>
-            ) : (
-              <input
-                className="wk-input mono"
-                type="number"
-                min={0}
-                max={100}
-                step="1"
-                inputMode="decimal"
-                placeholder="0"
-                disabled={locked}
-                value={pfValue}
-                onChange={(e) =>
-                  setFactDraft((cur) => ({ ...cur, [item.id]: { ...cur[item.id], pf: e.target.value } }))
-                }
-                onBlur={() => saveFact(item)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                }}
-              />
-            )}
+            <input
+              className="wk-input mono"
+              type="number"
+              min={0}
+              max={100}
+              step="1"
+              inputMode="decimal"
+              placeholder="0"
+              disabled={locked}
+              title={
+                canConvert
+                  ? "Введите процент — объём пересчитается сам"
+                  : "У этапа не задан общий объём, поэтому готовность отмечается процентом"
+              }
+              value={pfValue}
+              onChange={(e) =>
+                setFactDraft((cur) => ({
+                  ...cur,
+                  [item.id]: { ...cur[item.id], pf: e.target.value, last: "pf" },
+                }))
+              }
+              onBlur={() => saveFact(item)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+            />
           </div>
           <div
             className={`wk-c wk-c-dev mono${deviation != null && deviation < 0 ? " is-neg" : ""}`}
