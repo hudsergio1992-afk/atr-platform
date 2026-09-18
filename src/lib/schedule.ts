@@ -94,6 +94,13 @@ export interface TaskNode {
    * с календарным ходом уже бессмысленно, важен именно срок сдачи.
    */
   daysDeviation: number | null;
+  /**
+   * Выигрыш в днях: плюс — сработали раньше срока, минус — позже.
+   * У закрытой работы считается по фактическому окончанию, у незакрытой
+   * просроченной — по сегодняшнему дню: ждать закрытия, чтобы увидеть
+   * потерю, поздно. Пока срок не вышел и работа идёт — null, судить рано.
+   */
+  daysGain: number | null;
   status: ScheduleStatus;
   /** Вес узла при усреднении процентов у родителя — плановая длительность. */
   weight: number;
@@ -123,6 +130,28 @@ function endDaysDeviation(endPlan: string | null, endFact: string | null): numbe
   const b = parseDay(endFact);
   if (a === null || b === null) return null;
   return Math.round((b - a) / MS_PER_DAY);
+}
+
+/**
+ * Дни, выигранные (плюс) или потерянные (минус) относительно планового окончания.
+ * Закрытая работа судится по факту сдачи, незакрытая просроченная — по сегодня.
+ */
+function daysGainOf(
+  endPlan: string | null,
+  endFact: string | null,
+  progressFact: number,
+  today: string
+): number | null {
+  const plan = parseDay(endPlan);
+  if (plan === null) return null;
+  if (progressFact >= 100) {
+    const fact = parseDay(endFact);
+    if (fact === null) return null;
+    return Math.round((plan - fact) / MS_PER_DAY);
+  }
+  const now = parseDay(today);
+  if (now === null || now <= plan) return null;
+  return Math.round((plan - now) / MS_PER_DAY);
 }
 
 function computeStatus(
@@ -219,6 +248,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         progressFact,
         deviation,
         daysDeviation: progressFact >= 100 ? endDaysDeviation(endPlan, task.end_fact) : null,
+        daysGain: daysGainOf(endPlan, task.end_fact, progressFact, today),
         status: computeStatus(progressFact, deviation, endPlan, today),
         weight: durationPlan || 1,
       };
@@ -288,6 +318,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       progressFact,
       deviation,
       daysDeviation: progressFact >= 100 ? endDaysDeviation(endPlan, endFact) : null,
+      daysGain: daysGainOf(endPlan, endFact, progressFact, today),
       status: computeStatus(progressFact, deviation, endPlan, today),
       weight: totalWeight,
     };
@@ -317,6 +348,12 @@ export interface ScheduleSummary {
   closed: number;
   /** Сколько работ вскрылось по ходу стройки. */
   extra: number;
+  /** Суммарно выиграно дней по работам, сданным раньше срока. */
+  daysAhead: number;
+  /** Суммарно потеряно дней: сданные позже плюс просроченные незакрытые. */
+  daysLate: number;
+  /** Сальдо: плюс — общий выигрыш, минус — общая потеря. */
+  daysNet: number;
   progressPlan: number | null;
   progressFact: number | null;
   startPlan: string | null;
@@ -332,11 +369,19 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
   let behind = 0;
   let closed = 0;
   let extra = 0;
+  let daysAhead = 0;
+  let daysLate = 0;
   for (const n of all) {
     if (n.status === "behind") behind++;
     else if (n.status === "closed") closed++;
     else onTrack++;
     if (n.kind === "extra") extra++;
+  }
+  // Дни считаем по листьям: у групп те же сроки, что у детей, и они удвоили бы счёт.
+  for (const n of base) {
+    if (n.daysGain === null) continue;
+    if (n.daysGain > 0) daysAhead += n.daysGain;
+    else if (n.daysGain < 0) daysLate += -n.daysGain;
   }
 
   const wSum = (pick: (n: TaskNode) => number | null): number | null => {
@@ -357,6 +402,9 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     behind,
     closed,
     extra,
+    daysAhead,
+    daysLate,
+    daysNet: daysAhead - daysLate,
     progressPlan: wSum((n) => n.progressPlan),
     progressFact: wSum((n) => n.progressFact),
     startPlan: minDay(all.map((n) => n.startPlan)),

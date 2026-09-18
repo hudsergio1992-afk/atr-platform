@@ -34,8 +34,8 @@ import {
   fmtPercent,
   fmtRange,
   deviationWords,
-  daysDeviationWords,
-  fmtDaysDeviation,
+  daysGainWords,
+  fmtDaysGain,
   plural,
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
@@ -52,6 +52,7 @@ type SortKey =
   | "progressPlan"
   | "progressFact"
   | "deviation"
+  | "daysGain"
   | "status";
 
 const VIEW_LABEL: Record<ViewMode, string> = {
@@ -347,6 +348,7 @@ export default function ScheduleModule() {
         case "progressPlan": return n.progressPlan;
         case "progressFact": return n.progressFact;
         case "deviation": return n.deviation;
+        case "daysGain": return n.daysGain;
         case "status": return STATUS_ORDER[n.status];
       }
     };
@@ -774,17 +776,19 @@ export default function ScheduleModule() {
             <dd className="mono">{fmtPercent(n.progressFact)}</dd>
             <dt>Отклонение</dt>
             <dd>
-              {n.status === "closed" ? (
-                <>
-                  <span className="mono">{fmtDaysDeviation(n.daysDeviation)}</span>
-                  <span className="dev-words"> — {daysDeviationWords(n.daysDeviation)}</span>
-                </>
-              ) : (
-                <>
-                  <span className="mono">{fmtDeviation(n.deviation)}</span>
-                  <span className="dev-words"> — {deviationWords(n.deviation)}</span>
-                </>
-              )}
+              <span className="mono">{fmtDeviation(n.deviation)}</span>
+              <span className="dev-words"> — {deviationWords(n.deviation)}</span>
+            </dd>
+            <dt>Дни к сроку</dt>
+            <dd>
+              <span
+                className={`mono${
+                  n.daysGain === null ? "" : n.daysGain > 0 ? " is-pos" : n.daysGain < 0 ? " is-neg" : ""
+                }`}
+              >
+                {fmtDaysGain(n.daysGain)}
+              </span>
+              <span className="dev-words"> — {daysGainWords(n.daysGain, n.status === "closed")}</span>
             </dd>
             <dt>Статус</dt>
             <dd>
@@ -912,16 +916,18 @@ export default function ScheduleModule() {
             {fmtPercent(n.progressFact)}
           </div>
           <div
-            className={`sch-c sch-c-dev mono${
-              (n.status === "closed"
-                ? n.daysDeviation != null && n.daysDeviation > 0
-                : n.deviation != null && n.deviation < 0)
-                ? " is-neg"
-                : ""
-            }`}
-            title={n.status === "closed" ? daysDeviationWords(n.daysDeviation) : deviationWords(n.deviation)}
+            className={`sch-c sch-c-dev mono${n.deviation != null && n.deviation < 0 ? " is-neg" : ""}`}
+            title={deviationWords(n.deviation)}
           >
-            {n.status === "closed" ? fmtDaysDeviation(n.daysDeviation) : fmtDeviation(n.deviation)}
+            {fmtDeviation(n.deviation)}
+          </div>
+          <div
+            className={`sch-c sch-c-days mono${
+              n.daysGain === null ? "" : n.daysGain > 0 ? " is-pos" : n.daysGain < 0 ? " is-neg" : ""
+            }`}
+            title={daysGainWords(n.daysGain, n.status === "closed")}
+          >
+            {fmtDaysGain(n.daysGain)}
           </div>
           <div className="sch-c sch-c-status">
             <span className={`status-pill ${SCHEDULE_STATUS_CLASS[n.status]}`}>
@@ -933,17 +939,14 @@ export default function ScheduleModule() {
             <span className="mono">
               план {fmtPercent(n.progressPlan)} · факт {fmtPercent(n.progressFact)}
             </span>
-            <span
-              className={`mono${
-                (n.status === "closed"
-                  ? n.daysDeviation != null && n.daysDeviation > 0
-                  : n.deviation != null && n.deviation < 0)
-                  ? " is-neg"
-                  : ""
-              }`}
-            >
-              {n.status === "closed" ? fmtDaysDeviation(n.daysDeviation) : fmtDeviation(n.deviation)}
+            <span className={`mono${n.deviation != null && n.deviation < 0 ? " is-neg" : ""}`}>
+              {fmtDeviation(n.deviation)}
             </span>
+            {n.daysGain !== null && (
+              <span className={`mono${n.daysGain > 0 ? " is-pos" : n.daysGain < 0 ? " is-neg" : ""}`}>
+                {fmtDaysGain(n.daysGain)}
+              </span>
+            )}
             {n.volumeTotal != null && (
               <span className="mono">{`${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim()}</span>
             )}
@@ -1039,6 +1042,28 @@ export default function ScheduleModule() {
           </span>
           <span className="chip st-neutral mono">{fmtRange(summary.startPlan, summary.endPlan)}</span>
         </div>
+        <div className="chip-row">
+          <span
+            className="chip st-good"
+            title="Сумма дней по работам, сданным раньше планового срока"
+          >
+            +<span className="n">{summary.daysAhead}</span>{" "}
+            {plural(summary.daysAhead, "день в плюс", "дня в плюс", "дней в плюс")}
+          </span>
+          <span
+            className="chip st-bad"
+            title="Сумма дней по работам, сданным позже срока и просроченным незакрытым"
+          >
+            −<span className="n">{summary.daysLate}</span>{" "}
+            {plural(summary.daysLate, "день в минус", "дня в минус", "дней в минус")}
+          </span>
+          <span
+            className={`chip ${summary.daysNet > 0 ? "st-good" : summary.daysNet < 0 ? "st-bad" : "st-neutral"}`}
+            title="Сальдо: выигранные дни минус потерянные"
+          >
+            итог <span className="n">{fmtDaysGain(summary.daysNet)}</span>
+          </span>
+        </div>
       </div>
 
       <div className="toolbar">
@@ -1125,7 +1150,8 @@ export default function ScheduleModule() {
             <div className="sch-c sch-c-fact">Сроки факт</div>
             <div className="sch-c sch-c-pp" title="Сколько должно быть готово по календарю на сегодня">% план</div>
             <div className="sch-c sch-c-pf" title="Сколько готово на самом деле">% факт</div>
-            <div className="sch-c sch-c-dev" title="Пока работа идёт — факт минус план в процентных пунктах. У закрытой работы — на сколько дней сдача разошлась с плановым сроком">Откл.</div>
+            <div className="sch-c sch-c-dev" title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение">Откл.</div>
+            <div className="sch-c sch-c-days" title="Дни относительно планового окончания: плюс — раньше срока, минус — позже или просрочено">Дни ±</div>
             <div className="sch-c sch-c-status">Статус</div>
           </div>
           {showRows && treeRows.length ? (
@@ -1159,10 +1185,17 @@ export default function ScheduleModule() {
             </button>
             <button
               className="sch-c sch-c-dev"
-              title="Пока работа идёт — факт минус план в процентных пунктах. У закрытой работы — на сколько дней сдача разошлась с плановым сроком"
+              title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение"
               onClick={() => sortBy("deviation")}
             >
               Откл.{sortArrow("deviation")}
+            </button>
+            <button
+              className="sch-c sch-c-days"
+              title="Дни относительно планового окончания: плюс — раньше срока, минус — позже или просрочено"
+              onClick={() => sortBy("daysGain")}
+            >
+              Дни ±{sortArrow("daysGain")}
             </button>
             <button className="sch-c sch-c-status" onClick={() => sortBy("status")}>
               Статус{sortArrow("status")}

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # копия supabase/schema.sql, кладётся скриптом перед сборкой
 /public/schema.sql
+
+# случайный вывод браузерных проверок без заданного каталога
+undefined/

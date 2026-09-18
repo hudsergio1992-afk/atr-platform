@@ -101,3 +101,26 @@ export function daysDeviationWords(n: number | null | undefined): string {
     ? `закрыт на ${size} ${unit} раньше срока`
     : `закрыт на ${size} ${unit} позже срока`;
 }
+
+/** Дни выигрыша/потери: 5 -> "+5 дн." (раньше срока), -3 -> "−3 дн." (позже). */
+export function fmtDaysGain(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "—";
+  const v = Math.trunc(Number(n));
+  if (v === 0) return "0 дн.";
+  return `${v > 0 ? "+" : "−"}${Math.abs(v)} дн.`;
+}
+
+/** Словами: «сработали на 5 дней раньше срока». */
+export function daysGainWords(n: number | null | undefined, closed: boolean): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) {
+    return closed ? "нет фактической даты окончания" : "срок ещё не вышел";
+  }
+  const v = Math.trunc(Number(n));
+  if (v === 0) return "сдано день в день";
+  const size = Math.abs(v);
+  const unit = plural(size, "день", "дня", "дней");
+  if (v > 0) return `сработали на ${size} ${unit} раньше срока`;
+  return closed
+    ? `сдано на ${size} ${unit} позже срока`
+    : `просрочено на ${size} ${unit}, работа не закрыта`;
+}
