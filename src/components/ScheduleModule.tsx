@@ -37,7 +37,6 @@ type SortKey =
   | "startPlan"
   | "endPlan"
   | "duration"
-  | "normHours"
   | "progressPlan"
   | "progressFact"
   | "deviation"
@@ -68,7 +67,6 @@ interface FormState {
   endPlan: string;
   startFact: string;
   endFact: string;
-  normHours: string;
   progressFact: string;
   volumeTotal: string;
   unit: string;
@@ -82,7 +80,6 @@ const EMPTY_FORM: FormState = {
   endPlan: "",
   startFact: "",
   endFact: "",
-  normHours: "",
   progressFact: "",
   volumeTotal: "",
   unit: "",
@@ -96,7 +93,6 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   endPlan: "Окончание (план)",
   startFact: "Начало (факт)",
   endFact: "Окончание (факт)",
-  normHours: "Нормочасы",
   progressFact: "% готовности факт",
   volumeTotal: "Объём",
   unit: "Ед. изм.",
@@ -112,7 +108,6 @@ function toForm(t: ScheduleTask | null): FormState {
     endPlan: t.end_plan || "",
     startFact: t.start_fact || "",
     endFact: t.end_fact || "",
-    normHours: t.norm_hours != null ? String(t.norm_hours) : "",
     progressFact: t.progress_fact != null ? String(t.progress_fact) : "",
     volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
     unit: t.unit || "",
@@ -310,7 +305,6 @@ export default function ScheduleModule() {
         case "startPlan": return n.startPlan;
         case "endPlan": return n.endPlan;
         case "duration": return n.durationPlan;
-        case "normHours": return n.normHours;
         case "progressPlan": return n.progressPlan;
         case "progressFact": return n.progressFact;
         case "deviation": return n.deviation;
@@ -455,11 +449,6 @@ export default function ScheduleModule() {
       setBanner("% готовности факт должен быть числом от 0 до 100.");
       return;
     }
-    const nh = form.normHours === "" ? null : Number(form.normHours);
-    if (nh !== null && (!Number.isFinite(nh) || nh < 0)) {
-      setBanner("Нормочасы должны быть неотрицательным числом.");
-      return;
-    }
     const vol = form.volumeTotal === "" ? null : Number(form.volumeTotal);
     if (vol !== null && (!Number.isFinite(vol) || vol < 0)) {
       setBanner("Объём должен быть неотрицательным числом.");
@@ -483,7 +472,6 @@ export default function ScheduleModule() {
       end_plan: form.endPlan || null,
       start_fact: form.startFact || null,
       end_fact: form.endFact || null,
-      norm_hours: nh,
       progress_fact: clampPercent(pf),
       volume_total: vol,
       unit: form.unit.trim() || null,
@@ -545,8 +533,6 @@ export default function ScheduleModule() {
             <dd className="mono">{fmtRange(n.startFact, n.endFact)}</dd>
             <dt>Длительность</dt>
             <dd className="mono">{n.durationPlan ? `${n.durationPlan} дн.` : "—"}</dd>
-            <dt>Нормочасы</dt>
-            <dd className="mono">{n.normHours != null ? `${fmtNum(n.normHours)} н/ч` : "—"}</dd>
             <dt>Объём</dt>
             <dd className="mono">
               {n.volumeTotal != null ? `${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim() : "—"}
@@ -566,7 +552,7 @@ export default function ScheduleModule() {
           </dl>
           {n.isGroup && (
             <p className="hint">
-              Этап содержит подэтапы: даты, нормочасы и проценты сведены по ним автоматически.
+              Этап содержит подэтапы: даты, объёмы и проценты сведены по ним автоматически.
             </p>
           )}
           <div className="detail-actions">
@@ -666,7 +652,6 @@ export default function ScheduleModule() {
           </div>
           <div className="sch-c sch-c-plan mono">{fmtRange(n.startPlan, n.endPlan)}</div>
           <div className="sch-c sch-c-dur mono">{n.durationPlan ?? "—"}</div>
-          <div className="sch-c sch-c-nh mono">{n.normHours != null ? fmtNum(n.normHours) : "—"}</div>
           <div className="sch-c sch-c-fact mono">{fmtRange(n.startFact, n.endFact)}</div>
           <div className="sch-c sch-c-pp mono">{fmtPercent(n.progressPlan)}</div>
           <div className="sch-c sch-c-pf mono">
@@ -782,11 +767,6 @@ export default function ScheduleModule() {
           >
             факт <span className="n">{fmtPercent(summary.progressFact)}</span>
           </span>
-          {summary.normHours != null && (
-            <span className="chip st-neutral">
-              <span className="n">{fmtNum(summary.normHours)}</span> н/ч всего
-            </span>
-          )}
           <span className="chip st-neutral mono">{fmtRange(summary.startPlan, summary.endPlan)}</span>
         </div>
       </div>
@@ -844,7 +824,6 @@ export default function ScheduleModule() {
             <div className="sch-c sch-c-name">Этап</div>
             <div className="sch-c sch-c-plan">Сроки план</div>
             <div className="sch-c sch-c-dur">Дней</div>
-            <div className="sch-c sch-c-nh">Н/ч</div>
             <div className="sch-c sch-c-fact">Сроки факт</div>
             <div className="sch-c sch-c-pp">% план</div>
             <div className="sch-c sch-c-pf">% факт</div>
@@ -870,9 +849,6 @@ export default function ScheduleModule() {
             </button>
             <button className="sch-c sch-c-dur" onClick={() => sortBy("duration")}>
               Дней{sortArrow("duration")}
-            </button>
-            <button className="sch-c sch-c-nh" onClick={() => sortBy("normHours")}>
-              Н/ч{sortArrow("normHours")}
             </button>
             <button className="sch-c sch-c-fact" onClick={() => sortBy("endPlan")}>
               Сроки факт{sortArrow("endPlan")}
@@ -974,7 +950,7 @@ export default function ScheduleModule() {
 
           {editingIsGroup && (
             <p className="hint">
-              У этапа есть подэтапы — его сроки, нормочасы и % готовности считаются по ним.
+              У этапа есть подэтапы — его сроки, объёмы и % готовности считаются по ним.
               Поля ниже заблокированы.
             </p>
           )}
@@ -1021,34 +997,6 @@ export default function ScheduleModule() {
           </div>
           <div className="field-row">
             <div className="field">
-              <label>Нормочасы на работу</label>
-              <input
-                type="number"
-                min={0}
-                step="0.5"
-                placeholder="0"
-                disabled={editingIsGroup}
-                value={form.normHours}
-                onChange={(e) => setForm({ ...form, normHours: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>% готовности факт</label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step="1"
-                placeholder="0"
-                disabled={editingIsGroup}
-                value={form.progressFact}
-                onChange={(e) => setForm({ ...form, progressFact: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="field-row">
-            <div className="field">
               <label>Объём работы</label>
               <input
                 type="number"
@@ -1076,6 +1024,23 @@ export default function ScheduleModule() {
                 ))}
               </datalist>
             </div>
+          </div>
+          <div className="field">
+            <label>% готовности факт</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="1"
+              placeholder="0"
+              disabled={editingIsGroup}
+              value={form.progressFact}
+              onChange={(e) => setForm({ ...form, progressFact: e.target.value })}
+            />
+            <p className="hint">
+              Заполняется вручную только у этапов без объёма. Где объём задан, процент
+              считается по факту из недельных заданий.
+            </p>
           </div>
           <p className="hint">
             Объём нужен для недельных заданий: из него считается, сколько выдать на неделю.

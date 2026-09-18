@@ -31,7 +31,6 @@ create table if not exists public.schedule_tasks (
   end_plan      date,
   start_fact    date,
   end_fact      date,
-  norm_hours    numeric(12, 2) check (norm_hours is null or norm_hours >= 0),
   progress_fact numeric(5, 2)  not null default 0
                 check (progress_fact >= 0 and progress_fact <= 100),
   -- Натуральный объём работы и его единица измерения: от них считаются
@@ -46,6 +45,8 @@ create table if not exists public.schedule_tasks (
 -- Для баз, созданных до появления натуральных объёмов.
 alter table public.schedule_tasks add column if not exists volume_total numeric(14, 3);
 alter table public.schedule_tasks add column if not exists unit text;
+-- Нормочасы из платформы убраны: трудозатраты здесь не ведутся.
+alter table public.schedule_tasks drop column if exists norm_hours;
 
 create index if not exists schedule_tasks_object_idx on public.schedule_tasks (object_id, sort_order);
 create index if not exists schedule_tasks_parent_idx on public.schedule_tasks (parent_id);

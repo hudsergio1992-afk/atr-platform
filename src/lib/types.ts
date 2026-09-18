@@ -64,8 +64,6 @@ export interface ScheduleTask {
   end_plan: string | null;
   start_fact: string | null;
   end_fact: string | null;
-  /** Нормочасы на работу. */
-  norm_hours: number | null;
   /** % готовности факт — вводится вручную, 0…100. */
   progress_fact: number | null;
   /** Общий натуральный объём работы: от него считаются недельные задания. */

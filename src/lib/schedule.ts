@@ -77,7 +77,6 @@ export interface TaskNode {
   startFact: string | null;
   endFact: string | null;
   durationPlan: number | null;
-  normHours: number | null;
   /** Общий натуральный объём; у группы — сумма, только если единица у детей одна. */
   volumeTotal: number | null;
   unit: string | null;
@@ -86,7 +85,7 @@ export interface TaskNode {
   /** факт − план в процентных пунктах; null, если план не считается. */
   deviation: number | null;
   status: ScheduleStatus;
-  /** Вес узла при усреднении процентов у родителя. */
+  /** Вес узла при усреднении процентов у родителя — плановая длительность. */
   weight: number;
 }
 
@@ -180,10 +179,6 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       const progressFact = clampPercent(Number(task.progress_fact) || 0);
       const deviation =
         progressPlan === null ? null : Math.round((progressFact - progressPlan) * 10) / 10;
-      const normHours =
-        task.norm_hours === null || task.norm_hours === undefined
-          ? null
-          : Number(task.norm_hours);
       const volumeTotal =
         task.volume_total === null || task.volume_total === undefined
           ? null
@@ -198,14 +193,13 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         startFact: task.start_fact,
         endFact: task.end_fact,
         durationPlan,
-        normHours: normHours !== null && Number.isFinite(normHours) ? normHours : null,
         volumeTotal: volumeTotal !== null && Number.isFinite(volumeTotal) ? volumeTotal : null,
         unit: task.unit || null,
         progressPlan,
         progressFact,
         deviation,
         status: computeStatus(progressFact, deviation, endPlan, today),
-        weight: normHours && normHours > 0 ? normHours : durationPlan || 1,
+        weight: durationPlan || 1,
       };
     }
 
@@ -215,11 +209,6 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
     // Дата факт. окончания группы имеет смысл, только когда закрыты все подэтапы.
     const allKidsFinished = children.every((c) => c.endFact);
     const endFact = allKidsFinished ? maxDay(children.map((c) => c.endFact)) : null;
-
-    const hoursKnown = children.some((c) => c.normHours !== null);
-    const normHours = hoursKnown
-      ? children.reduce((s, c) => s + (c.normHours || 0), 0)
-      : null;
 
     // Объёмы складываются, только когда у всех подэтапов с объёмом одна единица:
     // «120 м³ + 8 т» — бессмыслица, которую нельзя показывать как число.
@@ -261,7 +250,6 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       startFact,
       endFact,
       durationPlan: daysInclusive(startPlan, endPlan),
-      normHours,
       volumeTotal,
       unit,
       progressPlan,
@@ -294,7 +282,6 @@ export interface ScheduleSummary {
   onTrack: number;
   behind: number;
   closed: number;
-  normHours: number | null;
   progressPlan: number | null;
   progressFact: number | null;
   startPlan: string | null;
@@ -315,9 +302,6 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     else onTrack++;
   }
 
-  const hoursKnown = base.some((n) => n.normHours !== null);
-  const normHours = hoursKnown ? base.reduce((s, n) => s + (n.normHours || 0), 0) : null;
-
   const wSum = (pick: (n: TaskNode) => number | null): number | null => {
     let sum = 0;
     let used = 0;
@@ -335,7 +319,6 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     onTrack,
     behind,
     closed,
-    normHours,
     progressPlan: wSum((n) => n.progressPlan),
     progressFact: wSum((n) => n.progressFact),
     startPlan: minDay(all.map((n) => n.startPlan)),
