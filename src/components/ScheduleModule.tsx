@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
 import { supabase } from "@/lib/supabaseClient";
-import { dbErrorText } from "@/lib/dbError";
+import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import {
   ConstructionObject,
   HistoryEntry,
@@ -37,6 +37,7 @@ import {
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
 import { STAGE_TEMPLATES, STAGE_TEMPLATES_COUNT } from "@/lib/stages";
+import SchemaSetup from "@/components/SchemaSetup";
 
 type ViewMode = "tree" | "table" | "gantt";
 type SortKey =
@@ -186,6 +187,7 @@ export default function ScheduleModule() {
   const [loadingObjects, setLoadingObjects] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [schemaMissing, setSchemaMissing] = useState(false);
 
   // Дата берётся только на клиенте: на сервере «сегодня» может отличаться от часового пояса пользователя.
   const today = useToday();
@@ -253,8 +255,10 @@ export default function ScheduleModule() {
       .order("created_at", { ascending: true });
     if (error) {
       setBanner(dbErrorText(error, "Не удалось загрузить график"));
+      setSchemaMissing(needsSchemaSetup(error));
       setTasks([]);
     } else {
+      setSchemaMissing(false);
       setTasks((data as ScheduleTask[]) || []);
     }
     setLoadingTasks(false);
@@ -546,6 +550,7 @@ export default function ScheduleModule() {
           .single();
         if (error || !data) {
           setBanner(dbErrorText(error, "Не удалось создать раздел «" + group.name + "»"));
+          setSchemaMissing(needsSchemaSetup(error));
           setCatalogBusy(false);
           return;
         }
@@ -670,6 +675,7 @@ export default function ScheduleModule() {
         .eq("id", editingId);
       if (error) {
         setBanner(dbErrorText(error, "Не удалось сохранить этап"));
+        setSchemaMissing(needsSchemaSetup(error));
       } else {
         closePanel();
         await loadTasks(objectId);
@@ -681,6 +687,7 @@ export default function ScheduleModule() {
         .insert({ ...payload, created_at: now, history });
       if (error) {
         setBanner(dbErrorText(error, "Не удалось создать этап"));
+        setSchemaMissing(needsSchemaSetup(error));
       } else {
         closePanel();
         await loadTasks(objectId);
@@ -905,6 +912,7 @@ export default function ScheduleModule() {
           {banner}
         </div>
       )}
+      {schemaMissing && <SchemaSetup />}
 
       <div className="obj-picker">
         <label htmlFor="sch-object">Объект</label>

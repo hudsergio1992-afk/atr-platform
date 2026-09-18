@@ -10,7 +10,23 @@ interface SupabaseLikeError {
   hint?: string | null;
 }
 
-const SCHEMA_HINT = "Выполните supabase/schema.sql в SQL Editor проекта Supabase.";
+const SCHEMA_HINT = "Хранилище для этих данных ещё не создано.";
+
+/** Ошибка означает, что в базе нет нужных таблиц или колонок. */
+export function needsSchemaSetup(error: SupabaseLikeError | null | undefined): boolean {
+  if (!error) return false;
+  const code = error.code || "";
+  const msg = error.message || "";
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "PGRST205" ||
+    code === "PGRST204" ||
+    /relation .* does not exist/i.test(msg) ||
+    /could not find the (table|.* column)/i.test(msg) ||
+    /column .* does not exist/i.test(msg)
+  );
+}
 
 export function dbErrorText(error: SupabaseLikeError | null | undefined, action: string): string {
   if (!error) return action;
@@ -25,15 +41,15 @@ export function dbErrorText(error: SupabaseLikeError | null | undefined, action:
     /relation .* does not exist/i.test(msg) ||
     /could not find the table/i.test(msg)
   ) {
-    return `${action}: в базе нет нужной таблицы. ${SCHEMA_HINT}`;
+    return `${action}: ${SCHEMA_HINT}`;
   }
   // Колонка есть в приложении, но PostgREST её не видит — чаще всего устаревший кэш схемы.
   if (code === "PGRST204" || /could not find the .* column/i.test(msg)) {
-    return `${action}: база не знает одного из полей. ${SCHEMA_HINT} Если скрипт уже выполнен — обновите кэш схемы: Settings → API → Reload schema cache.`;
+    return `${action}: хранилище отстало от приложения — не хватает одного из полей.`;
   }
   // Таблица есть, но устарела — нет колонки, которую шлёт приложение.
   if (code === "42703" || /column .* does not exist/i.test(msg)) {
-    return `${action}: база отстала от приложения — не хватает колонки. ${SCHEMA_HINT}`;
+    return `${action}: хранилище отстало от приложения — не хватает колонки.`;
   }
   if (code === "23505") {
     return `${action}: такая запись уже есть.`;
@@ -45,7 +61,7 @@ export function dbErrorText(error: SupabaseLikeError | null | undefined, action:
     return `${action}: значение не проходит проверку базы (например, процент вне 0…100).`;
   }
   if (code === "42501" || /permission denied|row-level security/i.test(msg)) {
-    return `${action}: база отказала в доступе. Проверьте политики доступа в Supabase. ${SCHEMA_HINT}`;
+    return `${action}: база отказала в доступе. Проверьте политики доступа в Supabase.`;
   }
   if (/Failed to fetch|NetworkError|fetch failed/i.test(msg)) {
     return `${action}: нет связи с базой. Проверьте интернет и настройки подключения.`;

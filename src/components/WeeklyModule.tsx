@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { dbErrorText } from "@/lib/dbError";
+import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import {
   ConstructionObject,
   HistoryEntry,
@@ -28,6 +28,7 @@ import {
 } from "@/lib/weekly";
 import { fmtDate, fmtDateTime, fmtDeviation, fmtNum, fmtPercent, plural } from "@/lib/format";
 import { readSetting, useToday, writeSetting } from "@/lib/useClient";
+import SchemaSetup from "@/components/SchemaSetup";
 
 const LS_OBJECT_KEY = "atr.weekly.objectId";
 
@@ -109,6 +110,7 @@ export default function WeeklyModule() {
   const [loadingWeek, setLoadingWeek] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [schemaMissing, setSchemaMissing] = useState(false);
 
   const [weekOverride, setWeekOverride] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -156,6 +158,7 @@ export default function WeeklyModule() {
     ]);
     if (tasksRes.error) setBanner(dbErrorText(tasksRes.error, "Не удалось загрузить график"));
     if (asgRes.error) setBanner(dbErrorText(asgRes.error, "Не удалось загрузить задания"));
+    setSchemaMissing(needsSchemaSetup(tasksRes.error) || needsSchemaSetup(asgRes.error));
 
     const asg = (asgRes.data as WeeklyAssignment[]) || [];
     setTasks((tasksRes.data as ScheduleTask[]) || []);
@@ -851,6 +854,7 @@ export default function WeeklyModule() {
           {banner}
         </div>
       )}
+      {schemaMissing && <SchemaSetup />}
 
       <div className="obj-picker">
         <label htmlFor="wk-object">Объект</label>
