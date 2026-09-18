@@ -5,6 +5,7 @@ import { readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClien
 import { supabase } from "@/lib/supabaseClient";
 import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import {
+  CatalogStage,
   ConstructionObject,
   HistoryEntry,
   SCHEDULE_STATUS_CLASS,
@@ -22,6 +23,7 @@ import {
   clampPercent,
   daysInclusive,
   flattenTree,
+  placeByDate,
   planProgress,
   summarize,
   TaskNode,
@@ -39,7 +41,14 @@ import {
   plural,
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
-import { STAGE_TEMPLATES, STAGE_TEMPLATES_COUNT } from "@/lib/stages";
+import {
+  CUSTOM_SECTION,
+  isInCatalog,
+  mergeCatalog,
+  normalizeStageName,
+  STAGE_TEMPLATES_COUNT,
+} from "@/lib/stages";
+import { loadCatalogStages, saveCatalogStage } from "@/lib/stageCatalog";
 import SchemaSetup from "@/components/SchemaSetup";
 import ScheduleImport from "@/components/ScheduleImport";
 
@@ -71,6 +80,14 @@ const STATUS_ORDER: Record<ScheduleStatus, number> = { behind: 0, on_track: 1, c
 
 const LS_OBJECT_KEY = "atr.schedule.objectId";
 const LS_VIEW_KEY = "atr.schedule.view";
+
+/** Предложение сохранить только что заведённую работу в справочник. */
+interface AskStage {
+  name: string;
+  section: string;
+  unit: string;
+  tracking: TrackingMode;
+}
 
 interface FormState {
   name: string;
@@ -222,11 +239,19 @@ export default function ScheduleModule() {
   const [catalogPicked, setCatalogPicked] = useState<Set<string>>(new Set());
   const [catalogOpenGroups, setCatalogOpenGroups] = useState<Set<string>>(new Set());
   const [catalogBusy, setCatalogBusy] = useState(false);
+  // Работы, сохранённые в справочник самими прорабами, и предложение сохранить
+  // очередную — ту, которой в справочнике не нашлось.
+  const [customStages, setCustomStages] = useState<CatalogStage[]>([]);
+  const [catalogLocal, setCatalogLocal] = useState(false);
+  const [askStage, setAskStage] = useState<AskStage | null>(null);
+  const [askBusy, setAskBusy] = useState(false);
+  const [askDeclined, setAskDeclined] = useState<Set<string>>(new Set());
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [trackingTouched, setTrackingTouched] = useState(false);
+  const [orderTouched, setOrderTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadObjects = useCallback(async () => {
@@ -280,6 +305,24 @@ export default function ScheduleModule() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- состояние ставится после await, не синхронно
     loadTasks(objectId);
   }, [objectId, loadTasks]);
+
+  const loadCatalog = useCallback(async () => {
+    const res = await loadCatalogStages();
+    setCustomStages(res.items);
+    setCatalogLocal(res.local && res.items.length > 0);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- состояние ставится после await, не синхронно
+    loadCatalog();
+  }, [loadCatalog]);
+
+  /** Справочник, каким его видит прораб: типовые работы плюс свои. */
+  const allStageGroups = useMemo(() => mergeCatalog(customStages), [customStages]);
+  const stageCount = useMemo(
+    () => allStageGroups.reduce((n, g) => n + g.items.length, 0),
+    [allStageGroups]
+  );
 
   const currentObject = useMemo(
     () => objects.find((o) => o.id === objectId) || null,
@@ -439,6 +482,7 @@ export default function ScheduleModule() {
 
   function openPanel(id: string | null, presetParent?: string) {
     setTrackingTouched(false);
+    setOrderTouched(false);
     setEditingId(id);
     const t = id ? tasks.find((x) => x.id === id) || null : null;
     if (t) {
@@ -457,6 +501,27 @@ export default function ScheduleModule() {
       });
     }
     setPanelOpen(true);
+  }
+
+  /**
+   * Новая работа встаёт в список по своему сроку, а не в конец: работа,
+   * вскрывшаяся в марте, должна оказаться среди мартовских. У работ из ГПР
+   * порядок задан шифрами — их самовольно не переставляем, поэтому при правке
+   * место пересчитывается только у непредвиденных.
+   */
+  const autoPlaces = !editingId || form.kind === "extra";
+
+  function siblingsOf(parentId: string): ScheduleTask[] {
+    return tasks.filter(
+      (t) => (t.parent_id || "") === (parentId || "") && t.id !== editingId
+    );
+  }
+
+  /** Подставляет в форму место, которое работа займёт при текущих датах. */
+  function withAutoOrder(f: FormState): FormState {
+    if (orderTouched || !autoPlaces) return f;
+    const { order } = placeByDate(siblingsOf(f.parentId), f.startPlan || null, f.endPlan || null);
+    return { ...f, sortOrder: String(order) };
   }
 
   function closePanel() {
@@ -508,14 +573,14 @@ export default function ScheduleModule() {
 
   const catalogGroups = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase();
-    if (!q) return STAGE_TEMPLATES;
-    return STAGE_TEMPLATES.map((g) => ({
+    if (!q) return allStageGroups;
+    return allStageGroups.map((g) => ({
       ...g,
       items: g.items.filter(
         (i) => i.name.toLowerCase().includes(q) || g.name.toLowerCase().includes(q)
       ),
     })).filter((g) => g.items.length > 0);
-  }, [catalogSearch]);
+  }, [catalogSearch, allStageGroups]);
 
   function toggleCatalogGroupOpen(groupKey: string) {
     setCatalogOpenGroups((cur) => {
@@ -558,7 +623,7 @@ export default function ScheduleModule() {
     const rootTasks = tasks.filter((t) => !t.parent_id);
     let rootOrder = rootTasks.reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0);
 
-    for (const group of STAGE_TEMPLATES) {
+    for (const group of allStageGroups) {
       const picked = group.items.filter((i) => catalogPicked.has(`${group.key}::${i.name}`));
       if (!picked.length) continue;
 
@@ -683,7 +748,19 @@ export default function ScheduleModule() {
     setBanner(null);
     setSaving(true);
     const now = new Date().toISOString();
-    const order = Number(form.sortOrder);
+
+    // Место в списке: вручную заданное число — как есть, иначе по сроку работы.
+    let order = Number(form.sortOrder);
+    let renumber: { id: string; sort_order: number }[] = [];
+    if (!orderTouched && autoPlaces) {
+      const placement = placeByDate(
+        siblingsOf(form.parentId),
+        form.startPlan || null,
+        form.endPlan || null
+      );
+      order = placement.order;
+      renumber = placement.renumber;
+    }
     const payload = {
       object_id: objectId,
       parent_id: form.parentId || null,
@@ -715,6 +792,7 @@ export default function ScheduleModule() {
         setBanner(dbErrorText(error, "Не удалось сохранить этап"));
         setSchemaMissing(needsSchemaSetup(error));
       } else {
+        await applyRenumber(renumber);
         closePanel();
         await loadTasks(objectId);
       }
@@ -727,11 +805,67 @@ export default function ScheduleModule() {
         setBanner(dbErrorText(error, "Не удалось создать этап"));
         setSchemaMissing(needsSchemaSetup(error));
       } else {
+        await applyRenumber(renumber);
+        const name = form.name.trim();
+        const parentName = form.parentId ? nameById.get(form.parentId) || "" : "";
         closePanel();
         await loadTasks(objectId);
+        // Работы нет в справочнике — предлагаем сохранить, чтобы в следующий раз
+        // её не набирали руками заново.
+        if (!isInCatalog(allStageGroups, name) && !askDeclined.has(normalizeStageName(name))) {
+          setAskStage({
+            name,
+            section: parentName || CUSTOM_SECTION,
+            unit: form.unit.trim(),
+            tracking: form.tracking,
+          });
+        }
       }
     }
     setSaving(false);
+  }
+
+  /**
+   * Раздаёт соседям новые номера, если для работы не нашлось свободного места
+   * между ними. Порядок соседей при этом сохраняется — меняются только числа.
+   */
+  async function applyRenumber(rows: { id: string; sort_order: number }[]) {
+    if (!rows.length) return;
+    const results = await Promise.all(
+      rows.map((r) =>
+        supabase.from("schedule_tasks").update({ sort_order: r.sort_order }).eq("id", r.id)
+      )
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      setBanner(dbErrorText(failed.error, "Этап сохранён, но порядок соседних работ поправить не вышло"));
+    }
+  }
+
+  async function confirmSaveStage() {
+    if (!askStage) return;
+    setAskBusy(true);
+    const res = await saveCatalogStage({
+      section: askStage.section.trim() || CUSTOM_SECTION,
+      name: askStage.name,
+      unit: askStage.unit.trim() || null,
+      tracking: askStage.tracking,
+    });
+    setAskBusy(false);
+    setAskStage(null);
+    await loadCatalog();
+    setBanner(
+      res.local
+        ? `«${askStage.name}» сохранена в справочник только на этом устройстве: в базе справочника ещё нет. Подготовьте хранилище — и она уедет туда сама.`
+        : `«${askStage.name}» добавлена в справочник, раздел «${askStage.section.trim() || CUSTOM_SECTION}».`
+    );
+    if (res.local) setSchemaMissing(true);
+  }
+
+  function declineSaveStage() {
+    if (!askStage) return;
+    setAskDeclined((cur) => new Set(cur).add(normalizeStageName(askStage.name)));
+    setAskStage(null);
   }
 
   async function doDelete(id: string) {
@@ -978,6 +1112,65 @@ export default function ScheduleModule() {
       )}
       {schemaMissing && <SchemaSetup onRecheck={() => loadTasks(objectId)} />}
 
+      {askStage && (
+        <div className="ask-card">
+          <div className="ask-head">
+            <strong>Сохранить «{askStage.name}» в справочник?</strong>
+            <span className="ask-sub">
+              Такой работы в справочнике нет. Сохраните — и на других объектах её можно
+              будет отметить галочкой, а не набирать заново.
+            </span>
+          </div>
+          <div className="ask-fields">
+            <div className="field">
+              <label>Раздел справочника</label>
+              <input
+                type="text"
+                list="atr-catalog-sections"
+                value={askStage.section}
+                onChange={(e) => setAskStage({ ...askStage, section: e.target.value })}
+              />
+              <datalist id="atr-catalog-sections">
+                {allStageGroups.map((g) => (
+                  <option key={g.key} value={g.name} />
+                ))}
+                <option value={CUSTOM_SECTION} />
+              </datalist>
+            </div>
+            <div className="field">
+              <label>Ед. изм.</label>
+              <input
+                type="text"
+                list="atr-units"
+                placeholder="м³"
+                value={askStage.unit}
+                onChange={(e) => setAskStage({ ...askStage, unit: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>В задании выдавать</label>
+              <select
+                value={askStage.tracking}
+                onChange={(e) =>
+                  setAskStage({ ...askStage, tracking: e.target.value as TrackingMode })
+                }
+              >
+                <option value="volume">{TRACKING_LABEL.volume}</option>
+                <option value="percent">{TRACKING_LABEL.percent}</option>
+              </select>
+            </div>
+          </div>
+          <div className="ask-foot">
+            <button className="btn btn-ghost" onClick={declineSaveStage} disabled={askBusy}>
+              Не нужно
+            </button>
+            <button className="btn btn-primary" onClick={confirmSaveStage} disabled={askBusy}>
+              {askBusy ? "Сохранение…" : "Сохранить в справочник"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="obj-picker">
         <label htmlFor="sch-object">Объект</label>
         <select
@@ -1126,7 +1319,13 @@ export default function ScheduleModule() {
             className="btn btn-ghost"
             onClick={() => setCatalogOpen(true)}
             disabled={!objectId}
-            title={`${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства`}
+            title={
+              stageCount > STAGE_TEMPLATES_COUNT
+                ? `${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства и ${
+                    stageCount - STAGE_TEMPLATES_COUNT
+                  } своих`
+                : `${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства`
+            }
           >
             Из справочника
           </button>
@@ -1268,10 +1467,17 @@ export default function ScheduleModule() {
         </div>
         <div className="panel-body">
           <p className="hint" style={{ marginTop: 0 }}>
-            Типовые работы агропромышленного строительства. Отмеченные попадут в график:
-            раздел станет групповым этапом, работы — подэтапами. Сроки и объёмы проставите
-            после — справочник задаёт только наименования, единицы и способ учёта.
+            Типовые работы агропромышленного строительства и те, что вы сохранили сами
+            (помечены «своя»). Отмеченные попадут в график: раздел станет групповым этапом,
+            работы — подэтапами. Сроки и объёмы проставите после — справочник задаёт только
+            наименования, единицы и способ учёта.
           </p>
+          {catalogLocal && (
+            <p className="hint hint-warn">
+              Свои работы пока лежат только в этом браузере: таблицы справочника в базе ещё
+              нет. Подготовьте хранилище — они уедут в базу сами и станут видны остальным.
+            </p>
+          )}
           <input
             className="search"
             type="text"
@@ -1317,6 +1523,7 @@ export default function ScheduleModule() {
                         />
                         <span className="cat-item-name">{i.name}</span>
                         <span className="cat-item-meta">
+                          {i.custom && <span className="cat-own">своя</span>}
                           {i.unit && <span className="cat-unit mono">{i.unit}</span>}
                           <span className={`cat-mode ${i.tracking}`}>
                             {i.tracking === "volume" ? "объём" : "процент"}
@@ -1369,7 +1576,7 @@ export default function ScheduleModule() {
               <label>Входит в раздел</label>
               <select
                 value={form.parentId}
-                onChange={(e) => setForm({ ...form, parentId: e.target.value })}
+                onChange={(e) => setForm(withAutoOrder({ ...form, parentId: e.target.value }))}
               >
                 <option value="">— самостоятельный этап —</option>
                 {parentOptions.map((p) => (
@@ -1385,7 +1592,10 @@ export default function ScheduleModule() {
                 type="number"
                 step="1"
                 value={form.sortOrder}
-                onChange={(e) => setForm({ ...form, sortOrder: e.target.value })}
+                onChange={(e) => {
+                  setOrderTouched(true);
+                  setForm({ ...form, sortOrder: e.target.value });
+                }}
               />
             </div>
           </div>
@@ -1393,8 +1603,14 @@ export default function ScheduleModule() {
             График строится деревом: раздел («Нулевой цикл») и работы внутри него
             («Бетонирование ростверка»). У раздела сроки и проценты считаются по его
             работам сами. Если работа не входит ни в какой раздел — оставьте
-            «самостоятельный этап». Порядок задаёт место в списке: чем меньше число,
-            тем выше строка.
+            «самостоятельный этап».
+          </p>
+          <p className="hint">
+            {orderTouched
+              ? "Место в списке задано вручную: чем меньше число, тем выше строка."
+              : autoPlaces
+              ? "Место в списке подставляется само — по дате начала, между соседями того же раздела. Впишите своё число, если нужно иначе."
+              : "Место в списке сохранено из графика; работы ГПР сами не переставляются. Впишите своё число, если нужно иначе."}
           </p>
 
           {editingIsGroup && (
@@ -1411,7 +1627,7 @@ export default function ScheduleModule() {
                 type="date"
                 disabled={editingIsGroup}
                 value={form.startPlan}
-                onChange={(e) => setForm({ ...form, startPlan: e.target.value })}
+                onChange={(e) => setForm(withAutoOrder({ ...form, startPlan: e.target.value }))}
               />
             </div>
             <div className="field">
@@ -1420,7 +1636,7 @@ export default function ScheduleModule() {
                 type="date"
                 disabled={editingIsGroup}
                 value={form.endPlan}
-                onChange={(e) => setForm({ ...form, endPlan: e.target.value })}
+                onChange={(e) => setForm(withAutoOrder({ ...form, endPlan: e.target.value }))}
               />
             </div>
           </div>

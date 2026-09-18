@@ -102,6 +102,25 @@ end $$;
 create index if not exists schedule_tasks_object_idx on public.schedule_tasks (object_id, sort_order);
 create index if not exists schedule_tasks_parent_idx on public.schedule_tasks (parent_id);
 
+-- ── Свой справочник работ ────────────────────────────────────────────────────
+-- Типовые работы зашиты в коде (src/lib/stages.ts), но стройка всегда шире
+-- справочника. Работу, которой там не нашлось, прораб сохраняет отсюда — и она
+-- появляется в справочнике у всех, а не только на его телефоне.
+create table if not exists public.stage_catalog (
+  id         uuid primary key default gen_random_uuid(),
+  section    text        not null,
+  name       text        not null,
+  unit       text,
+  tracking   text        not null default 'percent'
+             check (tracking in ('volume', 'percent')),
+  created_at timestamptz not null default now()
+);
+
+-- Одна работа — одна запись: повторное сохранение того же наименования
+-- в том же разделе не плодит копии.
+create unique index if not exists stage_catalog_name_idx
+  on public.stage_catalog (lower(section), lower(name));
+
 -- ── Модуль 3: Недельные задания (СНЗ) ────────────────────────────────────────
 -- Задание — это неделя по одному объекту. week_start всегда понедельник.
 create table if not exists public.weekly_assignments (
@@ -164,6 +183,7 @@ alter table public.objects            enable row level security;
 alter table public.schedule_tasks     enable row level security;
 alter table public.weekly_assignments enable row level security;
 alter table public.weekly_items       enable row level security;
+alter table public.stage_catalog      enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
 create policy objects_anon_all on public.objects
@@ -179,4 +199,8 @@ create policy weekly_assignments_anon_all on public.weekly_assignments
 
 drop policy if exists weekly_items_anon_all on public.weekly_items;
 create policy weekly_items_anon_all on public.weekly_items
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists stage_catalog_anon_all on public.stage_catalog;
+create policy stage_catalog_anon_all on public.stage_catalog
   for all to anon, authenticated using (true) with check (true);

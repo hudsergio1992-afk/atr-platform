@@ -14,7 +14,14 @@ import {
   WeeklyItem,
   WeeklyStatus,
 } from "@/lib/types";
-import { buildTree, clampPercent, flattenTree, planProgress, TaskNode } from "@/lib/schedule";
+import {
+  buildTree,
+  clampPercent,
+  flattenTree,
+  placeByDate,
+  planProgress,
+  TaskNode,
+} from "@/lib/schedule";
 import {
   buildDraft,
   isoWeekNumber,
@@ -673,19 +680,24 @@ export default function WeeklyModule() {
     setBusy(true);
     const now = new Date().toISOString();
     const hasVolume = item.volume_plan !== null && Number(item.volume_plan) > 0 && !!item.unit;
-    const rootOrder = tasks
-      .filter((t) => !t.parent_id)
-      .reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0);
+    const weekEnd = weekEndOf(assignment.week_start);
+    // Работа встаёт в график по своей неделе, а не в конец списка: иначе
+    // непредвиденное мартовское всплывало бы под декабрьской пусконаладкой.
+    const placement = placeByDate(
+      tasks.filter((t) => !t.parent_id),
+      assignment.week_start,
+      weekEnd
+    );
 
     const { data, error } = await supabase
       .from("schedule_tasks")
       .insert({
         object_id: objectId,
         parent_id: null,
-        sort_order: rootOrder + 10,
+        sort_order: placement.order,
         name: item.name,
         start_plan: assignment.week_start,
-        end_plan: weekEndOf(assignment.week_start),
+        end_plan: weekEnd,
         start_fact: null,
         end_fact: null,
         tracking: hasVolume ? "volume" : "percent",
@@ -704,6 +716,19 @@ export default function WeeklyModule() {
       setBanner(dbErrorText(error, "Не удалось завести работу в график"));
       setBusy(false);
       return;
+    }
+
+    // Освобождаем место, если между соседями не осталось свободного номера.
+    if (placement.renumber.length) {
+      const results = await Promise.all(
+        placement.renumber.map((r) =>
+          supabase.from("schedule_tasks").update({ sort_order: r.sort_order }).eq("id", r.id)
+        )
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        setBanner(dbErrorText(failed.error, "Работа заведена, но порядок соседних этапов поправить не вышло"));
+      }
     }
 
     const history: HistoryEntry[] = [

@@ -411,3 +411,71 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     endPlan: maxDay(all.map((n) => n.endPlan)),
   };
 }
+
+/* ---------- Место работы в списке по её датам ---------- */
+
+/** Перенумерация соседей, если между ними не осталось свободного числа. */
+export interface Placement {
+  /** Номер, который получает сам этап. */
+  order: number;
+  /** Кому из соседей пришлось сменить номер, чтобы освободить место. */
+  renumber: { id: string; sort_order: number }[];
+}
+
+/** По какой дате работа встаёт в ряд: начало плана, а без него — окончание. */
+function placementKey(startPlan: string | null, endPlan: string | null): number | null {
+  return parseDay(startPlan) ?? parseDay(endPlan);
+}
+
+/**
+ * Куда поставить работу среди соседей по разделу, чтобы она встала по сроку,
+ * а не в конец списка. Непредвиденная работа, вскрывшаяся в марте, должна
+ * оказаться между мартовскими, иначе график читается как попало.
+ *
+ * Работы без дат остаются там, где стояли: судить о них по срокам нечем.
+ * Порядок остальных не перекраивается — ГПР приходит со своими шифрами,
+ * и переставлять его строки самовольно нельзя.
+ */
+export function placeByDate(
+  siblings: ScheduleTask[],
+  startPlan: string | null,
+  endPlan: string | null
+): Placement {
+  const ordered = siblings
+    .slice()
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.created_at.localeCompare(b.created_at));
+
+  const maxOrder = ordered.reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0);
+  const key = placementKey(startPlan, endPlan);
+  if (key === null || ordered.length === 0) {
+    return { order: maxOrder + 10, renumber: [] };
+  }
+
+  // Последняя работа, которая по сроку начинается не позже новой.
+  let index = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const k = placementKey(ordered[i].start_plan, ordered[i].end_plan);
+    if (k !== null && k <= key) index = i + 1;
+  }
+
+  const prev = index > 0 ? ordered[index - 1] : null;
+  const next = index < ordered.length ? ordered[index] : null;
+
+  if (!next) return { order: (prev?.sort_order ?? 0) + 10, renumber: [] };
+
+  const low = prev ? prev.sort_order ?? 0 : (next.sort_order ?? 0) - 20;
+  const high = next.sort_order ?? 0;
+  const gap = Math.floor((low + high) / 2);
+  if (gap > low && gap < high) return { order: gap, renumber: [] };
+
+  // Свободного числа между соседями не осталось — раздаём номера заново
+  // с шагом 10, сохраняя их взаимный порядок.
+  const renumber: { id: string; sort_order: number }[] = [];
+  let n = 0;
+  ordered.forEach((t, i) => {
+    if (i === index) n += 10; // место, которое займёт новая работа
+    n += 10;
+    if ((t.sort_order ?? 0) !== n) renumber.push({ id: t.id, sort_order: n });
+  });
+  return { order: (index + 1) * 10, renumber };
+}

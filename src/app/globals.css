@@ -584,6 +584,9 @@ tr.detail-row td { padding: 0; }
 /* Загрузка ГПР показывает таблицу строк — ей нужно больше места. */
 .panel.panel-import { width: min(820px, 100vw); }
 /* flex: 0 0 auto — иначе flex-контейнер панели сжимает разделы и работы наезжают. */
+/* В колоночном flex «flex: 1 1 220px» задаёт поиску высоту, и в короткой
+   выдаче поле растягивалось на пол-панели. */
+.panel-body .search { flex: 0 0 auto; }
 .cat-group { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .cat-group-head {
     display: flex; align-items: center; gap: 8px;
@@ -617,6 +620,25 @@ tr.detail-row td { padding: 0; }
 .cat-mode.volume { background: var(--st-good-bg); color: var(--st-good-ink); }
 .cat-mode.percent { background: var(--st-warn-bg); color: var(--st-warn-ink); }
 .cat-group input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); flex: 0 0 auto; }
+.cat-own {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em;
+    border-radius: 5px; padding: 2px 6px; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink);
+}
+
+/* ---- Вопрос «сохранить работу в справочник?» ---- */
+.ask-card {
+    background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 12px;
+    display: flex; flex-direction: column; gap: 12px;
+}
+.ask-head { display: flex; flex-direction: column; gap: 4px; }
+.ask-head strong { font-size: 14px; }
+.ask-sub { color: var(--muted); font-size: 12.5px; }
+.ask-fields { display: flex; gap: 12px; flex-wrap: wrap; }
+.ask-fields .field { flex: 1 1 180px; min-width: 0; }
+.ask-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.hint-warn { color: var(--st-warn-ink); background: var(--st-warn-bg); border-radius: 8px; padding: 8px 10px; }
 
 /* ---- Блок авторасчёта в форме ---- */
 .calc-box {

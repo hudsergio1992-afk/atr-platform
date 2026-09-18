@@ -131,6 +131,19 @@ export const SCHEDULE_STATUS_CLASS: Record<ScheduleStatus, string> = {
   closed: "st-neutral",
 };
 
+/**
+ * Работа, сохранённая в справочник самим прорабом. Типовые работы зашиты
+ * в коде (src/lib/stages.ts) — эти дописываются к ним из базы.
+ */
+export interface CatalogStage {
+  id: string;
+  section: string;
+  name: string;
+  unit: string | null;
+  tracking: TrackingMode;
+  created_at: string;
+}
+
 /* ---------- Модуль 3: Недельные задания (СНЗ) ---------- */
 
 export type WeeklyStatus = "draft" | "issued" | "closed";

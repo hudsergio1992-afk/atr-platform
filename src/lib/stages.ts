@@ -1,4 +1,4 @@
-import { TrackingMode } from "@/lib/types";
+import { CatalogStage, TrackingMode } from "@/lib/types";
 
 /**
  * Типовая работа справочника: наименование, ходовая единица измерения
@@ -8,6 +8,8 @@ export interface StageTemplateItem {
   name: string;
   unit?: string;
   tracking: TrackingMode;
+  /** Работа не из типового списка, а сохранённая пользователем. */
+  custom?: boolean;
 }
 
 export interface StageTemplateGroup {
@@ -234,3 +236,56 @@ export const STAGE_TEMPLATES: StageTemplateGroup[] = [
 
 /** Сколько всего типовых работ в справочнике — показывается на кнопке. */
 export const STAGE_TEMPLATES_COUNT = STAGE_TEMPLATES.reduce((s, g) => s + g.items.length, 0);
+
+/**
+ * Приведение наименования к сравнимому виду: регистр, лишние пробелы и «ё»
+ * не должны делать «Монтаж нории» и «монтаж  нории» разными работами.
+ */
+export function normalizeStageName(name: string): string {
+  return name.trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+}
+
+/** Раздел, куда попадают работы, сохранённые без выбора раздела. */
+export const CUSTOM_SECTION = "Свои работы";
+
+/**
+ * Справочник, каким его видит пользователь: типовые работы плюс сохранённые
+ * им самим. Работа из базы, попавшая в существующий раздел, дописывается
+ * в его конец; незнакомый раздел становится новой группой.
+ */
+export function mergeCatalog(
+  custom: CatalogStage[]
+): StageTemplateGroup[] {
+  const groups: StageTemplateGroup[] = STAGE_TEMPLATES.map((g) => ({
+    ...g,
+    items: g.items.slice(),
+  }));
+  const bySection = new Map<string, StageTemplateGroup>();
+  groups.forEach((g) => bySection.set(normalizeStageName(g.name), g));
+
+  for (const row of custom) {
+    const sectionKey = normalizeStageName(row.section || CUSTOM_SECTION);
+    let group = bySection.get(sectionKey);
+    if (!group) {
+      group = { key: `custom:${sectionKey}`, name: row.section || CUSTOM_SECTION, items: [] };
+      bySection.set(sectionKey, group);
+      groups.push(group);
+    }
+    const nameKey = normalizeStageName(row.name);
+    if (group.items.some((i) => normalizeStageName(i.name) === nameKey)) continue;
+    group.items.push({
+      name: row.name,
+      unit: row.unit || undefined,
+      tracking: row.tracking,
+      custom: true,
+    });
+  }
+  return groups;
+}
+
+/** Есть ли такая работа в справочнике — под любым разделом. */
+export function isInCatalog(groups: StageTemplateGroup[], name: string): boolean {
+  const key = normalizeStageName(name);
+  if (!key) return true;
+  return groups.some((g) => g.items.some((i) => normalizeStageName(i.name) === key));
+}
