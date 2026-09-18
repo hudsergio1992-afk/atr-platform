@@ -146,9 +146,14 @@ export interface BuildPlanInput {
   matrix: unknown[][];
   /** Этапы объекта, уже заведённые в системе. */
   existing: ScheduleTask[];
+  /**
+   * База не знает поля шифра (схему не обновляли) — тогда существующие этапы
+   * ищутся по наименованию. Менее строго, но позволяет работать без похода в БД.
+   */
+  matchByName?: boolean;
 }
 
-export function buildImportPlan({ matrix, existing }: BuildPlanInput): ImportPlan {
+export function buildImportPlan({ matrix, existing, matchByName }: BuildPlanInput): ImportPlan {
   const errors: ImportIssue[] = [];
   const rows: ImportRow[] = [];
 
@@ -178,10 +183,15 @@ export function buildImportPlan({ matrix, existing }: BuildPlanInput): ImportPla
     };
   }
 
+  const norma = (v: string) => v.trim().toLowerCase().replace(/\s+/g, " ").replace(/[«»"']/g, "");
   const byCode = new Map<string, ScheduleTask>();
+  const byName = new Map<string, ScheduleTask>();
   existing.forEach((t) => {
     if (t.code) byCode.set(t.code.trim(), t);
+    if (t.name) byName.set(norma(t.name), t);
   });
+  const findExisting = (code: string, name: string): ScheduleTask | null =>
+    (matchByName ? byName.get(norma(name)) : byCode.get(code)) || null;
 
   const seen = new Set<string>();
   const cell = (row: unknown[], key: string) =>
@@ -261,7 +271,7 @@ export function buildImportPlan({ matrix, existing }: BuildPlanInput): ImportPla
     }
 
     const parentCode = parentOfCode(code);
-    const existingTask = byCode.get(code) || null;
+    const existingTask = findExisting(code, name);
 
     const changes: string[] = [];
     if (existingTask) {
@@ -307,7 +317,7 @@ export function buildImportPlan({ matrix, existing }: BuildPlanInput): ImportPla
   // Родитель должен существовать — в файле или уже в системе.
   const codesInFile = new Set(rows.map((r) => r.code));
   rows.forEach((r) => {
-    if (r.parentCode && !codesInFile.has(r.parentCode) && !byCode.has(r.parentCode)) {
+    if (r.parentCode && !codesInFile.has(r.parentCode) && !byCode.has(r.parentCode) && !matchByName) {
       errors.push({
         line: r.line,
         text: `Шифр ${r.code} — нет родительской строки ${r.parentCode}. Добавьте её в файл.`,
@@ -315,7 +325,10 @@ export function buildImportPlan({ matrix, existing }: BuildPlanInput): ImportPla
     }
   });
 
-  const missing = existing.filter((t) => t.code && !codesInFile.has(t.code.trim()));
+  const namesInFile = new Set(rows.map((r) => norma(r.name)));
+  const missing = matchByName
+    ? existing.filter((t) => !namesInFile.has(norma(t.name)))
+    : existing.filter((t) => t.code && !codesInFile.has(t.code.trim()));
 
   return {
     rows,

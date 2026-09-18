@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
+import { detectMissingColumns, dropMissing } from "@/lib/dbColumns";
 import { HistoryEntry, ScheduleTask } from "@/lib/types";
 import {
   buildImportPlan,
@@ -53,7 +54,11 @@ const SAMPLE: (string | number)[][] = [
   ["2.1", "Сборка силосов №1–4", "18.09.2026", "02.11.2026", 4, "шт", "", "", ""],
 ];
 
+/** Поля этапа, появившиеся после первых версий: отставшая база их может не знать. */
+const OPTIONAL_COLUMNS = ["code", "tracking", "kind", "reason", "volume_total", "unit"];
+
 export default function ScheduleImport({ objectId, objectName, tasks, onClose, onDone }: Props) {
+  const [missingColumns, setMissingColumns] = useState<Set<string>>(new Set());
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -153,7 +158,10 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
         raw: true,
         defval: null,
       });
-      setPlan(buildImportPlan({ matrix, existing: tasks }));
+      // Спрашиваем базу, какие поля она знает: со старой схемой сопоставляем по названию.
+      const missing = await detectMissingColumns("schedule_tasks", OPTIONAL_COLUMNS);
+      setMissingColumns(missing);
+      setPlan(buildImportPlan({ matrix, existing: tasks, matchByName: missing.has("code") }));
     } catch (e) {
       setError("Не удалось прочитать файл: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -207,15 +215,18 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
         }));
         const { data, error: insertError } = await supabase
           .from("schedule_tasks")
-          .insert(payload)
+          .insert(payload.map((row) => dropMissing(row, missingColumns)))
           .select();
         if (insertError) {
           onDone(dbErrorText(insertError, "Загрузка прервана"), needsSchemaSetup(insertError));
           setBusy(false);
           return;
         }
-        (data as ScheduleTask[]).forEach((t) => {
-          if (t.code) codeToId.set(t.code, t.id);
+        const created = data as ScheduleTask[];
+        created.forEach((t, i) => {
+          // Без поля шифра в базе связываем по порядку вставки: он сохранён.
+          const code = t.code || toCreate[i]?.code;
+          if (code) codeToId.set(code, t.id);
         });
         createdCount += toCreate.length;
       }
@@ -242,7 +253,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
         ];
         const { error: updateError } = await supabase
           .from("schedule_tasks")
-          .update({ ...patch, history })
+          .update(dropMissing({ ...patch, history }, missingColumns))
           .eq("id", r.existingId as string);
         if (updateError) {
           onDone(dbErrorText(updateError, "Загрузка прервана"), needsSchemaSetup(updateError));
@@ -324,6 +335,18 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
           <p className="hint">
             Файл: <b>{fileName}</b>
           </p>
+        )}
+        {missingColumns.size > 0 && (
+          <div className="imp-degraded">
+            <b>База отстала от приложения</b> — нет{" "}
+            {Array.from(missingColumns).map((c) => `«${c}»`).join(", ")}. Загрузка пройдёт, но
+            {missingColumns.has("code") ? " этапы будут сопоставляться по наименованию, а не по шифру," : ""}
+            {missingColumns.size > (missingColumns.has("code") ? 1 : 0)
+              ? " часть данных из файла не сохранится."
+              : " шифры не сохранятся."}{" "}
+            Чтобы работало полностью, подготовьте хранилище заново — инструкция появится после
+            закрытия этого окна.
+          </div>
         )}
         {error && <div className="banner show">{error}</div>}
 

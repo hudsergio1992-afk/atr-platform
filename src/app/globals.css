@@ -538,6 +538,10 @@ tr.detail-row td { padding: 0; }
 .imp-act-create { background: var(--st-good-bg); color: var(--st-good-ink); }
 .imp-act-update { background: var(--st-warn-bg); color: var(--st-warn-ink); }
 .imp-act-same { background: var(--st-neutral-bg); color: var(--st-neutral-ink); }
+.imp-degraded {
+    border: 1px solid var(--st-warn-ink); border-radius: 8px; padding: 10px 12px;
+    background: var(--st-warn-bg); color: var(--st-warn-ink); font-size: 12.5px;
+}
 .imp-missing {
     border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
     background: var(--surface-2); font-size: 13px;
