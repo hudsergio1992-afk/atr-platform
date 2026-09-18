@@ -566,6 +566,13 @@ tr.detail-row td { padding: 0; }
 }
 .setup h3 { font-size: 16px; margin: 0 0 8px; }
 .setup p { margin: 0 0 10px; font-size: 13.5px; }
+.setup-gap {
+    background: var(--st-warn-bg); color: var(--st-warn-ink); border-radius: 8px;
+    padding: 10px 12px; font-size: 13px; margin: 0 0 12px;
+}
+.setup-gap ul { margin: 6px 0 0; padding-left: 20px; }
+.setup-gap li { margin-bottom: 3px; }
+.setup-gap-ok { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
 .setup-steps { margin: 0 0 14px; padding-left: 20px; font-size: 13.5px; }
 .setup-steps li { margin-bottom: 6px; }
 .setup-steps a { color: var(--accent); }
