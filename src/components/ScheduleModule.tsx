@@ -34,6 +34,8 @@ import {
   fmtPercent,
   fmtRange,
   deviationWords,
+  daysDeviationWords,
+  fmtDaysDeviation,
   plural,
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
@@ -739,8 +741,17 @@ export default function ScheduleModule() {
             <dd className="mono">{fmtPercent(n.progressFact)}</dd>
             <dt>Отклонение</dt>
             <dd>
-              <span className="mono">{fmtDeviation(n.deviation)}</span>
-              <span className="dev-words"> — {deviationWords(n.deviation)}</span>
+              {n.status === "closed" ? (
+                <>
+                  <span className="mono">{fmtDaysDeviation(n.daysDeviation)}</span>
+                  <span className="dev-words"> — {daysDeviationWords(n.daysDeviation)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="mono">{fmtDeviation(n.deviation)}</span>
+                  <span className="dev-words"> — {deviationWords(n.deviation)}</span>
+                </>
+              )}
             </dd>
             <dt>Статус</dt>
             <dd>
@@ -869,11 +880,15 @@ export default function ScheduleModule() {
           </div>
           <div
             className={`sch-c sch-c-dev mono${
-              n.deviation != null && n.deviation < 0 ? " is-neg" : ""
+              (n.status === "closed"
+                ? n.daysDeviation != null && n.daysDeviation > 0
+                : n.deviation != null && n.deviation < 0)
+                ? " is-neg"
+                : ""
             }`}
-            title={deviationWords(n.deviation)}
+            title={n.status === "closed" ? daysDeviationWords(n.daysDeviation) : deviationWords(n.deviation)}
           >
-            {fmtDeviation(n.deviation)}
+            {n.status === "closed" ? fmtDaysDeviation(n.daysDeviation) : fmtDeviation(n.deviation)}
           </div>
           <div className="sch-c sch-c-status">
             <span className={`status-pill ${SCHEDULE_STATUS_CLASS[n.status]}`}>
@@ -885,8 +900,16 @@ export default function ScheduleModule() {
             <span className="mono">
               план {fmtPercent(n.progressPlan)} · факт {fmtPercent(n.progressFact)}
             </span>
-            <span className={`mono${n.deviation != null && n.deviation < 0 ? " is-neg" : ""}`}>
-              {fmtDeviation(n.deviation)}
+            <span
+              className={`mono${
+                (n.status === "closed"
+                  ? n.daysDeviation != null && n.daysDeviation > 0
+                  : n.deviation != null && n.deviation < 0)
+                  ? " is-neg"
+                  : ""
+              }`}
+            >
+              {n.status === "closed" ? fmtDaysDeviation(n.daysDeviation) : fmtDeviation(n.deviation)}
             </span>
             {n.volumeTotal != null && (
               <span className="mono">{`${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim()}</span>
@@ -1061,7 +1084,7 @@ export default function ScheduleModule() {
             <div className="sch-c sch-c-fact">Сроки факт</div>
             <div className="sch-c sch-c-pp" title="Сколько должно быть готово по календарю на сегодня">% план</div>
             <div className="sch-c sch-c-pf" title="Сколько готово на самом деле">% факт</div>
-            <div className="sch-c sch-c-dev" title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение">Откл.</div>
+            <div className="sch-c sch-c-dev" title="Пока работа идёт — факт минус план в процентных пунктах. У закрытой работы — на сколько дней сдача разошлась с плановым сроком">Откл.</div>
             <div className="sch-c sch-c-status">Статус</div>
           </div>
           {showRows && treeRows.length ? (
@@ -1095,7 +1118,7 @@ export default function ScheduleModule() {
             </button>
             <button
               className="sch-c sch-c-dev"
-              title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение"
+              title="Пока работа идёт — факт минус план в процентных пунктах. У закрытой работы — на сколько дней сдача разошлась с плановым сроком"
               onClick={() => sortBy("deviation")}
             >
               Откл.{sortArrow("deviation")}

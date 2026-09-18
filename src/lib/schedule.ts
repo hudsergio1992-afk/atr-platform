@@ -88,6 +88,12 @@ export interface TaskNode {
   progressFact: number;
   /** факт − план в процентных пунктах; null, если план не считается. */
   deviation: number | null;
+  /**
+   * Для закрытого этапа — на сколько дней фактическое окончание разошлось
+   * с плановым: минус раньше срока, плюс позже. У закрытой работы сравнение
+   * с календарным ходом уже бессмысленно, важен именно срок сдачи.
+   */
+  daysDeviation: number | null;
   status: ScheduleStatus;
   /** Вес узла при усреднении процентов у родителя — плановая длительность. */
   weight: number;
@@ -109,6 +115,14 @@ function maxDay(values: (string | null)[]): string | null {
     if (d !== null && (best === null || d > best)) best = d;
   }
   return best === null ? null : dayToISO(best);
+}
+
+/** Разница фактического и планового окончания в днях. */
+function endDaysDeviation(endPlan: string | null, endFact: string | null): number | null {
+  const a = parseDay(endPlan);
+  const b = parseDay(endFact);
+  if (a === null || b === null) return null;
+  return Math.round((b - a) / MS_PER_DAY);
 }
 
 function computeStatus(
@@ -204,6 +218,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         progressPlan,
         progressFact,
         deviation,
+        daysDeviation: progressFact >= 100 ? endDaysDeviation(endPlan, task.end_fact) : null,
         status: computeStatus(progressFact, deviation, endPlan, today),
         weight: durationPlan || 1,
       };
@@ -272,6 +287,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       progressPlan,
       progressFact,
       deviation,
+      daysDeviation: progressFact >= 100 ? endDaysDeviation(endPlan, endFact) : null,
       status: computeStatus(progressFact, deviation, endPlan, today),
       weight: totalWeight,
     };

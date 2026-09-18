@@ -81,3 +81,23 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
 }
+
+/** Отклонение по срокам закрытого этапа: -9 -> "−9 дн." */
+export function fmtDaysDeviation(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "—";
+  const v = Math.trunc(Number(n));
+  if (v === 0) return "0 дн.";
+  return `${v > 0 ? "+" : "−"}${Math.abs(v)} дн.`;
+}
+
+/** Срок закрытия словами: «закрыт на 9 дней раньше срока». */
+export function daysDeviationWords(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "срок закрытия не указан";
+  const v = Math.trunc(Number(n));
+  if (v === 0) return "закрыт день в день";
+  const size = Math.abs(v);
+  const unit = plural(size, "день", "дня", "дней");
+  return v < 0
+    ? `закрыт на ${size} ${unit} раньше срока`
+    : `закрыт на ${size} ${unit} позже срока`;
+}
