@@ -494,6 +494,43 @@ tr.detail-row td { padding: 0; }
     }
 }
 
+/* ---- Справочник этапов ---- */
+.panel.panel-wide { width: min(560px, 100vw); }
+/* flex: 0 0 auto — иначе flex-контейнер панели сжимает разделы и работы наезжают. */
+.cat-group { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.cat-group-head {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface-2); padding: 9px 12px;
+}
+.cat-group.is-open .cat-group-head { border-bottom: 1px solid var(--border); }
+.cat-group-title {
+    flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px;
+    background: none; border: none; padding: 0; cursor: pointer; color: inherit;
+    font-size: 13px; font-weight: 600; text-align: left;
+}
+.cat-caret { color: var(--muted); font-size: 11px; flex: 0 0 auto; }
+.cat-check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.cat-count {
+    font-size: 11px; color: var(--muted); background: var(--surface-3);
+    border-radius: 5px; padding: 1px 6px; font-weight: 600;
+}
+.cat-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+    border-top: 1px solid var(--border); font-size: 13px; cursor: pointer;
+}
+.cat-item:first-of-type { border-top: none; }
+.cat-item:hover { background: var(--surface-2); }
+.cat-item-name { flex: 1 1 auto; min-width: 0; }
+.cat-item-meta { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.cat-unit { font-size: 11.5px; color: var(--muted); }
+.cat-mode {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em;
+    border-radius: 5px; padding: 2px 6px; font-weight: 600;
+}
+.cat-mode.volume { background: var(--st-good-bg); color: var(--st-good-ink); }
+.cat-mode.percent { background: var(--st-warn-bg); color: var(--st-warn-ink); }
+.cat-group input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); flex: 0 0 auto; }
+
 /* ---- Блок авторасчёта в форме ---- */
 .calc-box {
     background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;

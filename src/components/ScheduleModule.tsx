@@ -10,6 +10,8 @@ import {
   SCHEDULE_STATUS_LABEL,
   ScheduleStatus,
   ScheduleTask,
+  TRACKING_LABEL,
+  TrackingMode,
   UNITS,
 } from "@/lib/types";
 import {
@@ -30,6 +32,7 @@ import {
   fmtRange,
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
+import { STAGE_TEMPLATES, STAGE_TEMPLATES_COUNT } from "@/lib/stages";
 
 type ViewMode = "tree" | "table" | "gantt";
 type SortKey =
@@ -68,6 +71,7 @@ interface FormState {
   startFact: string;
   endFact: string;
   progressFact: string;
+  tracking: TrackingMode;
   volumeTotal: string;
   unit: string;
 }
@@ -81,6 +85,7 @@ const EMPTY_FORM: FormState = {
   startFact: "",
   endFact: "",
   progressFact: "",
+  tracking: "percent",
   volumeTotal: "",
   unit: "",
 };
@@ -94,6 +99,7 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   startFact: "Начало (факт)",
   endFact: "Окончание (факт)",
   progressFact: "% готовности факт",
+  tracking: "Способ учёта",
   volumeTotal: "Объём",
   unit: "Ед. изм.",
 };
@@ -109,6 +115,7 @@ function toForm(t: ScheduleTask | null): FormState {
     startFact: t.start_fact || "",
     endFact: t.end_fact || "",
     progressFact: t.progress_fact != null ? String(t.progress_fact) : "",
+    tracking: t.tracking === "volume" ? "volume" : "percent",
     volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
     unit: t.unit || "",
   };
@@ -128,6 +135,7 @@ function diffText(
     const disp = (v: string) => {
       if (!v) return "—";
       if (k === "parentId") return nameById.get(v) || v;
+      if (k === "tracking") return TRACKING_LABEL[v as TrackingMode] || v;
       if (k.startsWith("start") || k.startsWith("end")) return fmtDate(v);
       if (k === "progressFact") return `${v}%`;
       return v;
@@ -186,6 +194,12 @@ export default function ScheduleModule() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogPicked, setCatalogPicked] = useState<Set<string>>(new Set());
+  const [catalogOpenGroups, setCatalogOpenGroups] = useState<Set<string>>(new Set());
+  const [catalogBusy, setCatalogBusy] = useState(false);
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -427,6 +441,139 @@ export default function ScheduleModule() {
     };
   }, [form.startPlan, form.endPlan, form.progressFact, today, editingIsGroup, editingNode]);
 
+  const catalogGroups = useMemo(() => {
+    const q = catalogSearch.trim().toLowerCase();
+    if (!q) return STAGE_TEMPLATES;
+    return STAGE_TEMPLATES.map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (i) => i.name.toLowerCase().includes(q) || g.name.toLowerCase().includes(q)
+      ),
+    })).filter((g) => g.items.length > 0);
+  }, [catalogSearch]);
+
+  function toggleCatalogGroupOpen(groupKey: string) {
+    setCatalogOpenGroups((cur) => {
+      const next = new Set(cur);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }
+
+  function toggleCatalogItem(key: string) {
+    setCatalogPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleCatalogGroup(groupKey: string, itemNames: string[]) {
+    const keys = itemNames.map((n) => `${groupKey}::${n}`);
+    setCatalogPicked((cur) => {
+      const next = new Set(cur);
+      const allPicked = keys.every((k) => next.has(k));
+      keys.forEach((k) => (allPicked ? next.delete(k) : next.add(k)));
+      return next;
+    });
+  }
+
+  /**
+   * Переносит отмеченные типовые работы в график: раздел справочника становится
+   * групповым этапом, работы — его подэтапами. Раздел, который уже заведён
+   * на объекте, переиспользуется, а не дублируется.
+   */
+  async function addFromCatalog() {
+    if (!objectId || catalogPicked.size === 0) return;
+    setCatalogBusy(true);
+    const now = new Date().toISOString();
+
+    const rootTasks = tasks.filter((t) => !t.parent_id);
+    let rootOrder = rootTasks.reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0);
+
+    for (const group of STAGE_TEMPLATES) {
+      const picked = group.items.filter((i) => catalogPicked.has(`${group.key}::${i.name}`));
+      if (!picked.length) continue;
+
+      let parentId = rootTasks.find((t) => t.name === group.name)?.id || null;
+      if (!parentId) {
+        rootOrder += 10;
+        const { data, error } = await supabase
+          .from("schedule_tasks")
+          .insert({
+            object_id: objectId,
+            parent_id: null,
+            sort_order: rootOrder,
+            name: group.name,
+            start_plan: null,
+            end_plan: null,
+            start_fact: null,
+            end_fact: null,
+            tracking: "percent",
+            volume_total: null,
+            unit: null,
+            progress_fact: 0,
+            history: [{ at: now, text: "Раздел добавлен из справочника этапов" }],
+            created_at: now,
+            updated_at: now,
+          })
+          .select()
+          .single();
+        if (error || !data) {
+          setBanner("Не удалось создать раздел «" + group.name + "»: " + (error?.message || ""));
+          setCatalogBusy(false);
+          return;
+        }
+        parentId = (data as ScheduleTask).id;
+      }
+
+      const existing = new Set(
+        tasks.filter((t) => t.parent_id === parentId).map((t) => t.name)
+      );
+      const siblings = tasks.filter((t) => t.parent_id === parentId);
+      let order = siblings.reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0);
+
+      const rows = picked
+        .filter((i) => !existing.has(i.name))
+        .map((i) => {
+          order += 10;
+          return {
+            object_id: objectId,
+            parent_id: parentId,
+            sort_order: order,
+            name: i.name,
+            start_plan: null,
+            end_plan: null,
+            start_fact: null,
+            end_fact: null,
+            tracking: i.tracking,
+            volume_total: null,
+            unit: i.unit || null,
+            progress_fact: 0,
+            history: [{ at: now, text: "Добавлено из справочника этапов" }],
+            created_at: now,
+            updated_at: now,
+          };
+        });
+      if (rows.length) {
+        const { error } = await supabase.from("schedule_tasks").insert(rows);
+        if (error) {
+          setBanner("Не удалось добавить работы раздела «" + group.name + "»: " + error.message);
+          setCatalogBusy(false);
+          return;
+        }
+      }
+    }
+
+    setCatalogPicked(new Set());
+    setCatalogOpen(false);
+    setCatalogBusy(false);
+    setBanner("Этапы добавлены. Проставьте им плановые сроки и объёмы.");
+    await loadTasks(objectId);
+  }
+
   async function handleSave() {
     if (!objectId) {
       setBanner("Сначала выберите объект.");
@@ -458,6 +605,10 @@ export default function ScheduleModule() {
       setBanner("У объёма не указана единица измерения.");
       return;
     }
+    if (form.tracking === "volume" && (vol === null || vol <= 0)) {
+      setBanner("При учёте по объёму нужно указать объём работы больше нуля.");
+      return;
+    }
 
     setBanner(null);
     setSaving(true);
@@ -473,6 +624,7 @@ export default function ScheduleModule() {
       start_fact: form.startFact || null,
       end_fact: form.endFact || null,
       progress_fact: clampPercent(pf),
+      tracking: form.tracking,
       volume_total: vol,
       unit: form.unit.trim() || null,
       updated_at: now,
@@ -533,6 +685,8 @@ export default function ScheduleModule() {
             <dd className="mono">{fmtRange(n.startFact, n.endFact)}</dd>
             <dt>Длительность</dt>
             <dd className="mono">{n.durationPlan ? `${n.durationPlan} дн.` : "—"}</dd>
+            <dt>Учёт</dt>
+            <dd>{TRACKING_LABEL[n.tracking]}</dd>
             <dt>Объём</dt>
             <dd className="mono">
               {n.volumeTotal != null ? `${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim() : "—"}
@@ -813,7 +967,21 @@ export default function ScheduleModule() {
             ))}
           </div>
         )}
-        <button className="btn btn-primary" onClick={() => openPanel(null)} disabled={!objectId}>
+        <button
+          className="btn btn-ghost"
+          style={{ marginLeft: "auto" }}
+          onClick={() => setCatalogOpen(true)}
+          disabled={!objectId}
+          title={`${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства`}
+        >
+          Из справочника
+        </button>
+        <button
+          className="btn btn-primary"
+          style={{ marginLeft: 0 }}
+          onClick={() => openPanel(null)}
+          disabled={!objectId}
+        >
           + Добавить этап
         </button>
       </div>
@@ -901,6 +1069,95 @@ export default function ScheduleModule() {
             <div className="empty-state">{emptyText}</div>
           </div>
         ))}
+
+      <div
+        className={`overlay${catalogOpen ? " show" : ""}`}
+        onClick={() => setCatalogOpen(false)}
+      />
+      <div className={`panel panel-wide${catalogOpen ? " show" : ""}`}>
+        <div className="panel-head">
+          <h3>Справочник этапов</h3>
+          <button className="panel-close" aria-label="Закрыть" onClick={() => setCatalogOpen(false)}>
+            ✕
+          </button>
+        </div>
+        <div className="panel-body">
+          <p className="hint" style={{ marginTop: 0 }}>
+            Типовые работы агропромышленного строительства. Отмеченные попадут в график:
+            раздел станет групповым этапом, работы — подэтапами. Сроки и объёмы проставите
+            после — справочник задаёт только наименования, единицы и способ учёта.
+          </p>
+          <input
+            className="search"
+            type="text"
+            placeholder="Поиск по справочнику…"
+            value={catalogSearch}
+            onChange={(e) => setCatalogSearch(e.target.value)}
+          />
+          {catalogGroups.length === 0 ? (
+            <div className="empty-state">Ничего не найдено.</div>
+          ) : (
+            catalogGroups.map((g) => {
+              const keys = g.items.map((i) => `${g.key}::${i.name}`);
+              const allPicked = keys.every((k) => catalogPicked.has(k));
+              const somePicked = keys.some((k) => catalogPicked.has(k));
+              // При поиске разделы раскрыты: иначе непонятно, что именно нашлось.
+              const isOpen = catalogSearch.trim() !== "" || catalogOpenGroups.has(g.key);
+              return (
+                <div className={`cat-group${isOpen ? " is-open" : ""}`} key={g.key}>
+                  <div className="cat-group-head">
+                    <input
+                      type="checkbox"
+                      checked={allPicked}
+                      ref={(el) => {
+                        if (el) el.indeterminate = somePicked && !allPicked;
+                      }}
+                      onChange={() => toggleCatalogGroup(g.key, g.items.map((i) => i.name))}
+                      aria-label={`Отметить весь раздел «${g.name}»`}
+                    />
+                    <button className="cat-group-title" onClick={() => toggleCatalogGroupOpen(g.key)}>
+                      <span className="cat-caret">{isOpen ? "▾" : "▸"}</span>
+                      <span>{g.name}</span>
+                    </button>
+                    <span className="cat-count">{g.items.length}</span>
+                  </div>
+                  {isOpen && g.items.map((i) => {
+                    const key = `${g.key}::${i.name}`;
+                    return (
+                      <label className="cat-item" key={key}>
+                        <input
+                          type="checkbox"
+                          checked={catalogPicked.has(key)}
+                          onChange={() => toggleCatalogItem(key)}
+                        />
+                        <span className="cat-item-name">{i.name}</span>
+                        <span className="cat-item-meta">
+                          {i.unit && <span className="cat-unit mono">{i.unit}</span>}
+                          <span className={`cat-mode ${i.tracking}`}>
+                            {i.tracking === "volume" ? "объём" : "процент"}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="panel-foot">
+          <button className="btn btn-ghost" onClick={() => setCatalogPicked(new Set())}>
+            Снять отметки
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={addFromCatalog}
+            disabled={catalogBusy || catalogPicked.size === 0}
+          >
+            {catalogBusy ? "Добавление…" : `Добавить (${catalogPicked.size})`}
+          </button>
+        </div>
+      </div>
 
       <div className={`overlay${panelOpen ? " show" : ""}`} onClick={closePanel} />
       <div className={`panel${panelOpen ? " show" : ""}`}>
@@ -995,9 +1252,26 @@ export default function ScheduleModule() {
               />
             </div>
           </div>
+          <div className="field">
+            <label>Как отмечаем выполнение</label>
+            <select
+              value={form.tracking}
+              disabled={editingIsGroup}
+              onChange={(e) => setForm({ ...form, tracking: e.target.value as TrackingMode })}
+            >
+              <option value="volume">По объёму работ</option>
+              <option value="percent">По проценту готовности</option>
+            </select>
+            <p className="hint">
+              {form.tracking === "volume"
+                ? "Прораб сдаёт натуральный объём за неделю, процент готовности считается сам. Подходит бетону, металлу, сваям, кабелю."
+                : "Прораб двигает процент вручную. Так учитываются штучные, но длительные работы: силос один, а собирается месяц."}
+            </p>
+          </div>
+
           <div className="field-row">
             <div className="field">
-              <label>Объём работы</label>
+              <label>{form.tracking === "volume" ? "Объём работы" : "Количество (справочно)"}</label>
               <input
                 type="number"
                 min={0}
@@ -1033,19 +1307,16 @@ export default function ScheduleModule() {
               max={100}
               step="1"
               placeholder="0"
-              disabled={editingIsGroup}
+              disabled={editingIsGroup || form.tracking === "volume"}
               value={form.progressFact}
               onChange={(e) => setForm({ ...form, progressFact: e.target.value })}
             />
             <p className="hint">
-              Заполняется вручную только у этапов без объёма. Где объём задан, процент
-              считается по факту из недельных заданий.
+              {form.tracking === "volume"
+                ? "При учёте по объёму процент не вводится: он считается от сданного объёма."
+                : "Процент двигает прораб — в карточке этапа или в недельном задании."}
             </p>
           </div>
-          <p className="hint">
-            Объём нужен для недельных заданий: из него считается, сколько выдать на неделю.
-            Без объёма этап планируется только по датам и процентам.
-          </p>
 
           <div className="calc-box">
             <h4>Расчёт</h4>

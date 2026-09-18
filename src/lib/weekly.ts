@@ -185,7 +185,9 @@ export function buildDraft(input: DraftInput): DraftItem[] {
 
     const done = doneByTask.get(n.task.id) || 0;
     let volumePlan: number | null = null;
-    if (n.volumeTotal !== null && n.volumeTotal > 0 && n.durationPlan) {
+    // Объём на неделю выдаётся только этапам, которые учитываются по объёму:
+    // делить «1 силос» на недельные доли бессмысленно.
+    if (n.tracking === "volume" && n.volumeTotal !== null && n.volumeTotal > 0 && n.durationPlan) {
       const share = (n.volumeTotal * overlap) / n.durationPlan;
       const left = Math.max(0, n.volumeTotal - done);
       volumePlan = Math.round(Math.min(share, left) * 1000) / 1000;

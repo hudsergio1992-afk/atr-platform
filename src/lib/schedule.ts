@@ -1,4 +1,4 @@
-import { ScheduleStatus, ScheduleTask } from "@/lib/types";
+import { ScheduleStatus, ScheduleTask, TrackingMode } from "@/lib/types";
 
 /**
  * Допуск отклонения план-факт в процентных пунктах: пока факт отстаёт
@@ -77,6 +77,8 @@ export interface TaskNode {
   startFact: string | null;
   endFact: string | null;
   durationPlan: number | null;
+  /** Способ учёта выполнения; у группы — 'volume', только если так учитываются все дети. */
+  tracking: TrackingMode;
   /** Общий натуральный объём; у группы — сумма, только если единица у детей одна. */
   volumeTotal: number | null;
   unit: string | null;
@@ -193,6 +195,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         startFact: task.start_fact,
         endFact: task.end_fact,
         durationPlan,
+        tracking: task.tracking === "volume" ? "volume" : "percent",
         volumeTotal: volumeTotal !== null && Number.isFinite(volumeTotal) ? volumeTotal : null,
         unit: task.unit || null,
         progressPlan,
@@ -212,7 +215,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
 
     // Объёмы складываются, только когда у всех подэтапов с объёмом одна единица:
     // «120 м³ + 8 т» — бессмыслица, которую нельзя показывать как число.
-    const withVolume = children.filter((c) => c.volumeTotal !== null);
+    const withVolume = children.filter((c) => c.tracking === "volume" && c.volumeTotal !== null);
     const units = new Set(withVolume.map((c) => c.unit || ""));
     const sameUnit = withVolume.length > 0 && units.size === 1;
     const volumeTotal = sameUnit
@@ -250,6 +253,11 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       startFact,
       endFact,
       durationPlan: daysInclusive(startPlan, endPlan),
+      // Объём группы имеет смысл, только когда по объёму учитываются все подэтапы.
+      tracking:
+        children.length > 0 && children.every((c) => c.tracking === "volume")
+          ? "volume"
+          : "percent",
       volumeTotal,
       unit,
       progressPlan,

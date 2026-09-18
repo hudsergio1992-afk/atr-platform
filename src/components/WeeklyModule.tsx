@@ -371,7 +371,7 @@ export default function WeeklyModule() {
       if (!node) continue;
 
       let progress: number | null = null;
-      if (node.volumeTotal !== null && node.volumeTotal > 0) {
+      if (node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0) {
         progress = progressFromVolume(node.volumeTotal, doneByTask.get(taskId) || 0);
       } else {
         const percents = rows
@@ -464,7 +464,7 @@ export default function WeeklyModule() {
     }
     const done = doneByTask.get(taskId) || 0;
     const left =
-      node.volumeTotal !== null && node.volumeTotal > 0
+      node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0
         ? Math.max(0, Math.round((node.volumeTotal - done) * 1000) / 1000)
         : null;
     setForm((f) => ({
@@ -590,7 +590,7 @@ export default function WeeklyModule() {
             <dd className="mono">
               план {fmtPercent(item.progress_plan)} · факт{" "}
               {fmtPercent(
-                node && node.volumeTotal !== null && node.volumeTotal > 0
+                node && node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0
                   ? progressFromVolume(node.volumeTotal, doneByTask.get(item.task_id as string) || 0)
                   : item.progress_fact
               )}
@@ -665,7 +665,8 @@ export default function WeeklyModule() {
     // Где есть натуральный объём, процент готовности однозначно из него и считается —
     // руками его вводят только для работ без измеримого объёма.
     const node = item.task_id ? nodeById.get(item.task_id) : null;
-    const volumeDriven = hasVolume && node != null && node.volumeTotal !== null && node.volumeTotal > 0;
+    const volumeDriven =
+      hasVolume && node != null && node.tracking === "volume" && node.volumeTotal !== null && node.volumeTotal > 0;
     const factPercent = volumeDriven
       ? progressFromVolume(node!.volumeTotal, doneByTask.get(item.task_id as string) || 0)
       : item.progress_fact != null

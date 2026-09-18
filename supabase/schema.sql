@@ -33,6 +33,11 @@ create table if not exists public.schedule_tasks (
   end_fact      date,
   progress_fact numeric(5, 2)  not null default 0
                 check (progress_fact >= 0 and progress_fact <= 100),
+  -- Способ учёта выполнения: 'volume' — набранным натуральным объёмом,
+  -- 'percent' — процентом готовности (штучные, но длительные работы: сборка
+  -- силоса, монтаж нории, пусконаладка).
+  tracking      text        not null default 'percent'
+                check (tracking in ('volume', 'percent')),
   -- Натуральный объём работы и его единица измерения: от них считаются
   -- недельные задания (модуль «Недельные задания»).
   volume_total  numeric(14, 3) check (volume_total is null or volume_total >= 0),
@@ -47,6 +52,21 @@ alter table public.schedule_tasks add column if not exists volume_total numeric(
 alter table public.schedule_tasks add column if not exists unit text;
 -- Нормочасы из платформы убраны: трудозатраты здесь не ведутся.
 alter table public.schedule_tasks drop column if exists norm_hours;
+-- Способ учёта выполнения. Этапы, заведённые до его появления, считаются
+-- учитываемыми по объёму, если объём у них был указан.
+alter table public.schedule_tasks
+  add column if not exists tracking text not null default 'percent';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'schedule_tasks_tracking_check'
+  ) then
+    alter table public.schedule_tasks
+      add constraint schedule_tasks_tracking_check check (tracking in ('volume', 'percent'));
+  end if;
+end $$;
+update public.schedule_tasks set tracking = 'volume'
+  where volume_total is not null and volume_total > 0 and tracking = 'percent';
 
 create index if not exists schedule_tasks_object_idx on public.schedule_tasks (object_id, sort_order);
 create index if not exists schedule_tasks_parent_idx on public.schedule_tasks (parent_id);
