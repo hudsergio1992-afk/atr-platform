@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { dbErrorText } from "@/lib/dbError";
 import {
   ConstructionObject,
   HistoryEntry,
@@ -130,7 +131,7 @@ export default function WeeklyModule() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      setBanner("Не удалось загрузить объекты: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось загрузить объекты"));
       setLoadingObjects(false);
       return;
     }
@@ -153,8 +154,8 @@ export default function WeeklyModule() {
       supabase.from("schedule_tasks").select("*").eq("object_id", id).order("sort_order"),
       supabase.from("weekly_assignments").select("*").eq("object_id", id).order("week_start", { ascending: false }),
     ]);
-    if (tasksRes.error) setBanner("Не удалось загрузить график: " + tasksRes.error.message);
-    if (asgRes.error) setBanner("Не удалось загрузить задания: " + asgRes.error.message);
+    if (tasksRes.error) setBanner(dbErrorText(tasksRes.error, "Не удалось загрузить график"));
+    if (asgRes.error) setBanner(dbErrorText(asgRes.error, "Не удалось загрузить задания"));
 
     const asg = (asgRes.data as WeeklyAssignment[]) || [];
     setTasks((tasksRes.data as ScheduleTask[]) || []);
@@ -167,7 +168,7 @@ export default function WeeklyModule() {
         .select("*")
         .in("assignment_id", asg.map((a) => a.id))
         .order("sort_order");
-      if (error) setBanner("Не удалось загрузить строки заданий: " + error.message);
+      if (error) setBanner(dbErrorText(error, "Не удалось загрузить строки заданий"));
       setItems((data as WeeklyItem[]) || []);
     } else {
       setItems([]);
@@ -256,7 +257,7 @@ export default function WeeklyModule() {
       .select()
       .single();
     if (error || !data) {
-      setBanner("Не удалось создать задание: " + (error?.message || "пустой ответ"));
+      setBanner(dbErrorText(error, "Не удалось создать задание"));
       setBusy(false);
       return;
     }
@@ -295,7 +296,7 @@ export default function WeeklyModule() {
           updated_at: now,
         }));
         const { error: itemsError } = await supabase.from("weekly_items").insert(rows);
-        if (itemsError) setBanner("Задание создано, но строки не записались: " + itemsError.message);
+        if (itemsError) setBanner(dbErrorText(itemsError, "Задание создано, но строки не записались"));
       } else {
         setBanner("По графику на эту неделю работ не нашлось — задание создано пустым.");
       }
@@ -340,7 +341,7 @@ export default function WeeklyModule() {
       .update({ volume_fact: vf, progress_fact: pf === null ? null : clampPercent(pf), history, updated_at: now })
       .eq("id", item.id);
     if (error) {
-      setBanner("Не удалось сохранить факт: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось сохранить факт"));
       return;
     }
     setFactDraft((cur) => {
@@ -418,7 +419,7 @@ export default function WeeklyModule() {
       .update({ status, history, updated_at: now })
       .eq("id", assignment.id);
     if (error) {
-      setBanner("Не удалось изменить статус: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось изменить статус"));
       setBusy(false);
       return;
     }
@@ -524,7 +525,7 @@ export default function WeeklyModule() {
         .from("weekly_items")
         .update({ ...payload, history })
         .eq("id", editingId);
-      if (error) setBanner("Не удалось сохранить строку: " + error.message);
+      if (error) setBanner(dbErrorText(error, "Не удалось сохранить строку"));
       else {
         closePanel();
         await loadWeekData(objectId);
@@ -533,7 +534,7 @@ export default function WeeklyModule() {
       const { error } = await supabase
         .from("weekly_items")
         .insert({ ...payload, volume_fact: null, progress_fact: null, created_at: now, history: [{ at: now, text: "Строка добавлена" }] });
-      if (error) setBanner("Не удалось добавить строку: " + error.message);
+      if (error) setBanner(dbErrorText(error, "Не удалось добавить строку"));
       else {
         closePanel();
         await loadWeekData(objectId);
@@ -544,7 +545,7 @@ export default function WeeklyModule() {
 
   async function deleteItem(id: string) {
     const { error } = await supabase.from("weekly_items").delete().eq("id", id);
-    if (error) setBanner("Не удалось удалить строку: " + error.message);
+    if (error) setBanner(dbErrorText(error, "Не удалось удалить строку"));
     else {
       if (detailId === id) setDetailId(null);
       await loadWeekData(objectId);
@@ -556,7 +557,7 @@ export default function WeeklyModule() {
     if (!assignment) return;
     setBusy(true);
     const { error } = await supabase.from("weekly_assignments").delete().eq("id", assignment.id);
-    if (error) setBanner("Не удалось удалить задание: " + error.message);
+    if (error) setBanner(dbErrorText(error, "Не удалось удалить задание"));
     else await loadWeekData(objectId);
     setBusy(false);
   }
@@ -938,8 +939,9 @@ export default function WeeklyModule() {
               ))}
             </select>
             <p className="hint">
-              Выбор этапа подставит название, единицу и остаток объёма. Работы вне графика
-              тоже можно вписать — они не попадут в проценты этапов.
+              Выбор этапа подставит наименование, единицу и остаток объёма, а факт за неделю
+              уйдёт в процент готовности этого этапа. Работы вне графика тоже можно вписать —
+              они на проценты этапов не влияют.
             </p>
           </div>
           <div className="field">

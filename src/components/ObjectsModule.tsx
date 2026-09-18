@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { dbErrorText } from "@/lib/dbError";
 import {
   ConstructionObject,
   HistoryEntry,
@@ -118,7 +119,7 @@ export default function ObjectsModule() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      setBanner("Не удалось загрузить объекты: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось загрузить объекты"));
     } else {
       setObjects((data as ConstructionObject[]) || []);
     }
@@ -197,7 +198,7 @@ export default function ObjectsModule() {
         .update({ ...payload, history })
         .eq("id", editingId);
       if (error) {
-        setBanner("Не удалось сохранить изменения: " + error.message);
+        setBanner(dbErrorText(error, "Не удалось сохранить изменения"));
       } else {
         closePanel();
         await load();
@@ -208,7 +209,7 @@ export default function ObjectsModule() {
         .from("objects")
         .insert({ ...payload, created_at: now, history });
       if (error) {
-        setBanner("Не удалось создать объект: " + error.message);
+        setBanner(dbErrorText(error, "Не удалось создать объект"));
       } else {
         closePanel();
         await load();
@@ -220,7 +221,7 @@ export default function ObjectsModule() {
   async function doDelete(id: string) {
     const { error } = await supabase.from("objects").delete().eq("id", id);
     if (error) {
-      setBanner("Не удалось удалить объект: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось удалить объект"));
     } else {
       if (expandedId === id) setExpandedId(null);
       await load();

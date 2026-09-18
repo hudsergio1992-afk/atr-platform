@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
 import { supabase } from "@/lib/supabaseClient";
+import { dbErrorText } from "@/lib/dbError";
 import {
   ConstructionObject,
   HistoryEntry,
@@ -92,8 +93,8 @@ const EMPTY_FORM: FormState = {
 
 const FIELD_LABEL: Record<keyof FormState, string> = {
   name: "Наименование",
-  parentId: "Родительский этап",
-  sortOrder: "Порядок",
+  parentId: "Входит в раздел",
+  sortOrder: "Порядок в списке",
   startPlan: "Начало (план)",
   endPlan: "Окончание (план)",
   startFact: "Начало (факт)",
@@ -213,7 +214,7 @@ export default function ScheduleModule() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      setBanner("Не удалось загрузить объекты: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось загрузить объекты"));
       setLoadingObjects(false);
       return;
     }
@@ -238,7 +239,7 @@ export default function ScheduleModule() {
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) {
-      setBanner("Не удалось загрузить график: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось загрузить график"));
       setTasks([]);
     } else {
       setTasks((data as ScheduleTask[]) || []);
@@ -522,7 +523,7 @@ export default function ScheduleModule() {
           .select()
           .single();
         if (error || !data) {
-          setBanner("Не удалось создать раздел «" + group.name + "»: " + (error?.message || ""));
+          setBanner(dbErrorText(error, "Не удалось создать раздел «" + group.name + "»"));
           setCatalogBusy(false);
           return;
         }
@@ -560,7 +561,7 @@ export default function ScheduleModule() {
       if (rows.length) {
         const { error } = await supabase.from("schedule_tasks").insert(rows);
         if (error) {
-          setBanner("Не удалось добавить работы раздела «" + group.name + "»: " + error.message);
+          setBanner(dbErrorText(error, "Не удалось добавить работы раздела «" + group.name + "»"));
           setCatalogBusy(false);
           return;
         }
@@ -640,7 +641,7 @@ export default function ScheduleModule() {
         .update({ ...payload, history })
         .eq("id", editingId);
       if (error) {
-        setBanner("Не удалось сохранить этап: " + error.message);
+        setBanner(dbErrorText(error, "Не удалось сохранить этап"));
       } else {
         closePanel();
         await loadTasks(objectId);
@@ -651,7 +652,7 @@ export default function ScheduleModule() {
         .from("schedule_tasks")
         .insert({ ...payload, created_at: now, history });
       if (error) {
-        setBanner("Не удалось создать этап: " + error.message);
+        setBanner(dbErrorText(error, "Не удалось создать этап"));
       } else {
         closePanel();
         await loadTasks(objectId);
@@ -663,7 +664,7 @@ export default function ScheduleModule() {
   async function doDelete(id: string) {
     const { error } = await supabase.from("schedule_tasks").delete().eq("id", id);
     if (error) {
-      setBanner("Не удалось удалить этап: " + error.message);
+      setBanner(dbErrorText(error, "Не удалось удалить этап"));
     } else {
       if (detailId === id) setDetailId(null);
       await loadTasks(objectId);
@@ -1181,12 +1182,12 @@ export default function ScheduleModule() {
           </div>
           <div className="field-row">
             <div className="field">
-              <label>Родительский этап</label>
+              <label>Входит в раздел</label>
               <select
                 value={form.parentId}
                 onChange={(e) => setForm({ ...form, parentId: e.target.value })}
               >
-                <option value="">— верхний уровень —</option>
+                <option value="">— самостоятельный этап —</option>
                 {parentOptions.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
@@ -1195,7 +1196,7 @@ export default function ScheduleModule() {
               </select>
             </div>
             <div className="field">
-              <label>Порядок</label>
+              <label>Порядок в списке</label>
               <input
                 type="number"
                 step="1"
@@ -1204,6 +1205,13 @@ export default function ScheduleModule() {
               />
             </div>
           </div>
+          <p className="hint" style={{ marginTop: 0 }}>
+            График строится деревом: раздел («Нулевой цикл») и работы внутри него
+            («Бетонирование ростверка»). У раздела сроки и проценты считаются по его
+            работам сами. Если работа не входит ни в какой раздел — оставьте
+            «самостоятельный этап». Порядок задаёт место в списке: чем меньше число,
+            тем выше строка.
+          </p>
 
           {editingIsGroup && (
             <p className="hint">
