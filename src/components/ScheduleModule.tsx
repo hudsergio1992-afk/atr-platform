@@ -246,7 +246,9 @@ export default function ScheduleModule() {
   const [sortKey, setSortKey] = useState<SortKey>("startPlan");
   const [sortAsc, setSortAsc] = useState(true);
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // null — прораб ещё не трогал сворачивание: разделы стоят свёрнутыми.
+  // Иначе график после каждого перехода между модулями открывался бы простынёй.
+  const [collapsed, setCollapsed] = useState<Set<string> | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
@@ -383,18 +385,42 @@ export default function ScheduleModule() {
 
   const summary = useMemo(() => summarize(tree), [tree]);
 
+  /** Этапы с подэтапами — только их и можно свернуть. */
+  const groupIds = useMemo(() => {
+    const ids = new Set<string>();
+    flattenTree(tree).forEach((n) => {
+      if (n.children.length) ids.add(n.task.id);
+    });
+    return ids;
+  }, [tree]);
+
+  const filtering = !!(search.trim() || filterStatus || filterKind);
+
+  /**
+   * Что свёрнуто сейчас. Пока прораб не трогал — свёрнуто всё. При поиске
+   * и фильтрах сворачивание не действует: иначе найденное пряталось бы
+   * внутри закрытого раздела.
+   */
+  const collapsedNow = useMemo(() => {
+    if (filtering) return new Set<string>();
+    return collapsed ?? groupIds;
+  }, [collapsed, groupIds, filtering]);
+
+  const allOpen = collapsedNow.size === 0;
+  const allShut = groupIds.size > 0 && collapsedNow.size === groupIds.size;
+
   const treeRows = useMemo(() => {
     // Плоский список видимых строк дерева: потомки свёрнутого узла пропускаются.
     const out: TaskNode[] = [];
     const walk = (list: TaskNode[]) => {
       for (const n of list) {
         out.push(n);
-        if (n.children.length && !collapsed.has(n.task.id)) walk(n.children);
+        if (n.children.length && !collapsedNow.has(n.task.id)) walk(n.children);
       }
     };
     walk(filteredTree);
     return out;
-  }, [filteredTree, collapsed]);
+  }, [filteredTree, collapsedNow]);
 
   const tableRows = useMemo(() => {
     const rows = flattenTree(filteredTree).filter(matches);
@@ -429,12 +455,12 @@ export default function ScheduleModule() {
     const walk = (list: TaskNode[]) => {
       for (const n of list) {
         out.push(n);
-        if (n.children.length && !collapsed.has(n.task.id)) walk(n.children);
+        if (n.children.length && !collapsedNow.has(n.task.id)) walk(n.children);
       }
     };
     walk(filteredTree);
     return out;
-  }, [filteredTree, collapsed]);
+  }, [filteredTree, collapsedNow]);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, TaskNode>();
@@ -446,7 +472,7 @@ export default function ScheduleModule() {
     setObjectId(id);
     setDetailId(null);
     setPendingDeleteId(null);
-    setCollapsed(new Set());
+    setCollapsed(null);
     writeSetting(LS_OBJECT_KEY, id);
   }
 
@@ -457,11 +483,19 @@ export default function ScheduleModule() {
 
   function toggleCollapse(id: string) {
     setCollapsed((cur) => {
-      const next = new Set(cur);
+      const next = new Set(cur ?? groupIds);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }
+
+  function expandAll() {
+    setCollapsed(new Set());
+  }
+
+  function collapseAll() {
+    setCollapsed(new Set(groupIds));
   }
 
   function toggleDetail(id: string) {
@@ -1070,7 +1104,7 @@ export default function ScheduleModule() {
   function renderRow(n: TaskNode, mode: ViewMode) {
     const isTree = mode === "tree";
     const hasKids = n.children.length > 0;
-    const isCollapsed = collapsed.has(n.task.id);
+    const isCollapsed = collapsedNow.has(n.task.id);
     const parentName = parentNameById.get(n.task.id);
     return (
       <Fragment key={n.task.id}>
@@ -1404,6 +1438,34 @@ export default function ScheduleModule() {
                 {SCALE_LABEL[s]}
               </button>
             ))}
+          </div>
+        )}
+        {view !== "table" && groupIds.size > 0 && (
+          <div className="seg" role="group" aria-label="Разделы графика">
+            <button
+              className="seg-btn"
+              onClick={expandAll}
+              disabled={filtering || allOpen}
+              title={
+                filtering
+                  ? "При поиске и фильтрах разделы раскрыты сами"
+                  : "Показать работы всех разделов"
+              }
+            >
+              Развернуть все
+            </button>
+            <button
+              className="seg-btn"
+              onClick={collapseAll}
+              disabled={filtering || allShut}
+              title={
+                filtering
+                  ? "При поиске и фильтрах разделы раскрыты сами"
+                  : "Оставить только названия разделов"
+              }
+            >
+              Свернуть все
+            </button>
           </div>
         )}
         <div className="toolbar-actions">
