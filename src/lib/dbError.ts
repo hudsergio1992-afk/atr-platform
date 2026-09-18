@@ -17,9 +17,19 @@ export function dbErrorText(error: SupabaseLikeError | null | undefined, action:
   const code = error.code || "";
   const msg = error.message || "";
 
-  // Таблицы нет вовсе.
-  if (code === "42P01" || /relation .* does not exist/i.test(msg)) {
+  // Таблицы нет вовсе. PGRST205 — та же беда словами PostgREST:
+  // «Could not find the table ... in the schema cache».
+  if (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    /relation .* does not exist/i.test(msg) ||
+    /could not find the table/i.test(msg)
+  ) {
     return `${action}: в базе нет нужной таблицы. ${SCHEMA_HINT}`;
+  }
+  // Колонка есть в приложении, но PostgREST её не видит — чаще всего устаревший кэш схемы.
+  if (code === "PGRST204" || /could not find the .* column/i.test(msg)) {
+    return `${action}: база не знает одного из полей. ${SCHEMA_HINT} Если скрипт уже выполнен — обновите кэш схемы: Settings → API → Reload schema cache.`;
   }
   // Таблица есть, но устарела — нет колонки, которую шлёт приложение.
   if (code === "42703" || /column .* does not exist/i.test(msg)) {
