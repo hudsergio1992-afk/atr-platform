@@ -220,6 +220,15 @@ export default function WeeklyModule() {
   );
 
   const summary = useMemo(() => summarizeWeek(weekItems), [weekItems]);
+
+  /** Этапы, уже попавшие в задание: второй строки по ним быть не должно. */
+  const takenTaskIds = useMemo(() => {
+    const m = new Map<string, string>();
+    weekItems.forEach((i) => {
+      if (i.task_id) m.set(i.task_id, i.id);
+    });
+    return m;
+  }, [weekItems]);
   const locked = assignment?.status === "closed";
 
   /** Набранный объём по этапу за все недели — основа для остатков и % готовности. */
@@ -405,11 +414,7 @@ export default function WeeklyModule() {
     }
     if (progress === null) return;
 
-    // Другие строки этой же работы могли отметить готовность выше — не откатываем.
-    const others = items
-      .filter((i) => i.task_id === item.task_id && i.id !== item.id && i.progress_fact !== null)
-      .map((i) => Number(i.progress_fact));
-    const finalProgress = clampPercent(Math.max(progress, ...others, 0));
+    const finalProgress = clampPercent(progress);
     if (Math.abs(finalProgress - node.progressFact) < 0.05) return;
 
     const now = new Date().toISOString();
@@ -582,6 +587,15 @@ export default function WeeklyModule() {
     if (pp !== null && (!Number.isFinite(pp) || pp < 0 || pp > 100)) {
       setBanner("% готовности план должен быть от 0 до 100.");
       return;
+    }
+    if (form.taskId) {
+      const busyBy = takenTaskIds.get(form.taskId);
+      if (busyBy && busyBy !== editingId) {
+        setBanner(
+          "Эта работа уже есть в задании на неделю. Два факта по одной работе не свести — правьте существующую строку."
+        );
+        return;
+      }
     }
 
     setBanner(null);
@@ -1161,11 +1175,16 @@ export default function WeeklyModule() {
             <label>Этап графика работ</label>
             <select value={form.taskId} onChange={(e) => pickTask(e.target.value)}>
               <option value="">— вне графика —</option>
-              {leaves.map((n) => (
-                <option key={n.task.id} value={n.task.id}>
-                  {n.task.name}
-                </option>
-              ))}
+              {leaves.map((n) => {
+                const busyBy = takenTaskIds.get(n.task.id);
+                const busy = !!busyBy && busyBy !== editingId;
+                return (
+                  <option key={n.task.id} value={n.task.id} disabled={busy}>
+                    {n.task.name}
+                    {busy ? " — уже в задании" : ""}
+                  </option>
+                );
+              })}
             </select>
             <p className="hint">
               Выбор этапа подставит наименование, единицу и остаток объёма, а факт за неделю

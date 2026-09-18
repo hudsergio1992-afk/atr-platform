@@ -133,6 +133,23 @@ create index if not exists weekly_assignments_object_idx on public.weekly_assign
 create index if not exists weekly_items_assignment_idx on public.weekly_items (assignment_id, sort_order);
 create index if not exists weekly_items_task_idx on public.weekly_items (task_id);
 
+-- Одна работа графика — одна строка в задании недели. Две строки по одному этапу
+-- означали бы два разных факта по одной работе, и было бы неясно, какой верен.
+-- Если дубли успели появиться, лишним строкам снимается привязка к этапу:
+-- сами строки остаются (труд прораба не теряется), но становятся работами вне графика.
+update public.weekly_items wi set task_id = null
+where wi.task_id is not null
+  and exists (
+    select 1 from public.weekly_items other
+    where other.assignment_id = wi.assignment_id
+      and other.task_id = wi.task_id
+      and (other.updated_at, other.id) > (wi.updated_at, wi.id)
+  );
+
+create unique index if not exists weekly_items_one_row_per_task
+  on public.weekly_items (assignment_id, task_id)
+  where task_id is not null;
+
 -- ── Доступ ───────────────────────────────────────────────────────────────────
 -- MVP работает без аутентификации: анонимный ключ имеет полный доступ.
 -- Заменить на политики по ролям в модуле 8 «Роли и доступ».

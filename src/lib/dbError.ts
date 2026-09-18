@@ -52,6 +52,9 @@ export function dbErrorText(error: SupabaseLikeError | null | undefined, action:
     return `${action}: хранилище отстало от приложения — не хватает колонки.`;
   }
   if (code === "23505") {
+    if (/weekly_items_one_row_per_task/.test(msg) || /weekly_items_one_row_per_task/.test(error.details || "")) {
+      return `${action}: эта работа уже есть в задании на неделю. Правьте существующую строку.`;
+    }
     return `${action}: такая запись уже есть.`;
   }
   if (code === "23503") {
