@@ -379,6 +379,7 @@ export default function WeeklyModule() {
       delete next[item.id];
       return next;
     });
+    await syncTaskProgress(item, pf === null ? null : clampPercent(pf), vf);
     await loadWeekData(objectId);
   }
 
@@ -386,6 +387,52 @@ export default function WeeklyModule() {
    * Перенос факта недели в график работ: где у этапа есть натуральный объём,
    * процент считается от набранного объёма, иначе берётся введённый вручную.
    */
+  /**
+   * Переносит готовность одной работы в график сразу, как только прораб её вписал.
+   * Ждать закрытия недели нельзя: руководство смотрит график каждый день, и
+   * расхождение «в задании 98,5%, в графике 50%» — это неверная картина стройки.
+   */
+  async function syncTaskProgress(item: WeeklyItem, nextPercent: number | null, nextVolume: number | null) {
+    if (!item.task_id) return;
+    const node = nodeById.get(item.task_id);
+    if (!node) return;
+
+    let progress: number | null = nextPercent;
+    if (progress === null && node.volumeTotal !== null && node.volumeTotal > 0) {
+      // Свои прежние объёмы у строки заменяем на только что введённый.
+      const others = Math.max(0, (doneByTask.get(item.task_id) || 0) - Number(item.volume_fact || 0));
+      progress = progressFromVolume(node.volumeTotal, others + Number(nextVolume || 0));
+    }
+    if (progress === null) return;
+
+    // Другие строки этой же работы могли отметить готовность выше — не откатываем.
+    const others = items
+      .filter((i) => i.task_id === item.task_id && i.id !== item.id && i.progress_fact !== null)
+      .map((i) => Number(i.progress_fact));
+    const finalProgress = clampPercent(Math.max(progress, ...others, 0));
+    if (Math.abs(finalProgress - node.progressFact) < 0.05) return;
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { progress_fact: finalProgress, updated_at: now };
+    if (!node.task.start_fact && finalProgress > 0) patch.start_fact = assignment?.week_start || null;
+    if (finalProgress >= 100 && !node.task.end_fact) patch.end_fact = weekStart ? weekEndOf(weekStart) : null;
+
+    const history: HistoryEntry[] = [
+      ...(node.task.history || []),
+      {
+        at: now,
+        text: `% готовности факт: ${fmtPercent(node.progressFact)} → ${fmtPercent(
+          finalProgress
+        )} (недельное задание ${weekLabel(assignment?.week_start || now.slice(0, 10))})`,
+      },
+    ];
+    const { error } = await supabase
+      .from("schedule_tasks")
+      .update({ ...patch, history })
+      .eq("id", item.task_id);
+    if (error) setBanner(dbErrorText(error, "Факт записан, но график не обновился"));
+  }
+
   async function pushFactToSchedule(list: WeeklyItem[]): Promise<string[]> {
     const problems: string[] = [];
     const byTask = new Map<string, WeeklyItem[]>();
@@ -460,7 +507,7 @@ export default function WeeklyModule() {
       setBanner(
         problems.length
           ? "Неделя закрыта, но часть этапов графика не обновилась: " + problems.join("; ")
-          : "Неделя закрыта, проценты готовности перенесены в график работ."
+          : "Неделя закрыта. Задание больше не редактируется."
       );
     }
     await loadWeekData(objectId);
