@@ -21,6 +21,8 @@ export interface ImportRow {
   endFact: string | null;
   volumeTotal: number | null;
   unit: string | null;
+  /** Стоимость этапа, ₽. */
+  costTotal: number | null;
   progressFact: number | null;
   /** Шифр родителя, выведенный из кода. */
   parentCode: string | null;
@@ -54,6 +56,7 @@ const COLUMNS: { key: keyof ImportRow | "skip"; title: string; match: string[] }
   { key: "endPlan", title: "Окончание план", match: ["окончание план", "оконч. план", "дата окончания", "окончание"] },
   { key: "volumeTotal", title: "Объём", match: ["объём", "объем", "кол-во", "количество"] },
   { key: "unit", title: "Ед. изм.", match: ["ед. изм", "ед.изм", "единица", "ед"] },
+  { key: "costTotal", title: "Стоимость, ₽", match: ["стоимость", "сумма", "цена", "смета"] },
   { key: "startFact", title: "Начало факт", match: ["начало факт", "нач. факт"] },
   { key: "endFact", title: "Окончание факт", match: ["окончание факт", "оконч. факт"] },
   { key: "progressFact", title: "% факт", match: ["% факт", "процент", "готовность", "выполнение"] },
@@ -258,6 +261,12 @@ export function buildImportPlan({ matrix, existing, matchByName }: BuildPlanInpu
       continue;
     }
 
+    const costTotal = parseCellNumber(cell(raw, "costTotal"));
+    if (costTotal !== null && costTotal < 0) {
+      errors.push({ line, text: `Шифр ${code} — отрицательная стоимость.` });
+      continue;
+    }
+
     let progressFact = parseCellNumber(cell(raw, "progressFact"));
     if (progressFact !== null) {
       // «0,85» в колонке процентов почти наверняка означает 85%.
@@ -283,6 +292,7 @@ export function buildImportPlan({ matrix, existing, matchByName }: BuildPlanInpu
         ["окончание факт", existingTask.end_fact, endFact],
         ["объём", existingTask.volume_total === null ? null : Number(existingTask.volume_total), volumeTotal],
         ["ед. изм.", existingTask.unit, unit],
+        ["стоимость", existingTask.cost_total === null ? null : Number(existingTask.cost_total), costTotal],
         [
           "% факт",
           existingTask.progress_fact === null ? null : Number(existingTask.progress_fact),
@@ -306,6 +316,7 @@ export function buildImportPlan({ matrix, existing, matchByName }: BuildPlanInpu
       endFact,
       volumeTotal,
       unit,
+      costTotal,
       progressFact,
       parentCode,
       existingId: existingTask ? existingTask.id : null,

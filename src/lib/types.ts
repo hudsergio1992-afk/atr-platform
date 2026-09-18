@@ -111,6 +111,11 @@ export interface ScheduleTask {
   volume_total: number | null;
   /** Единица измерения объёма: м³, т, п.м и т. п. */
   unit: string | null;
+  /**
+   * Стоимость этапа целиком, в рублях. Единственная денежная величина, которая
+   * хранится: цена за единицу и освоение — производные от неё и объёма.
+   */
+  cost_total: number | null;
   history: HistoryEntry[];
   created_at: string;
   updated_at: string;

@@ -13,7 +13,7 @@ import {
   TEMPLATE_HEADERS,
   trackingFor,
 } from "@/lib/importSchedule";
-import { fmtDate, fmtNum, plural } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtNum, plural } from "@/lib/format";
 
 interface Props {
   objectId: string;
@@ -47,15 +47,15 @@ async function saveWorkbook(book: unknown, fileName: string) {
 
 /** Строки примера в шаблоне: показывают, как заполнять, и стираются перед загрузкой. */
 const SAMPLE: (string | number)[][] = [
-  ["1", "Нулевой цикл", "", "", "", "", "", "", ""],
-  ["1.1", "Свайное поле силосного корпуса", "20.07.2026", "24.08.2026", 320, "шт", "", "", ""],
-  ["1.2", "Бетонирование ростверка", "25.08.2026", "20.09.2026", 300, "м³", "", "", ""],
-  ["2", "Монтаж силосного корпуса", "", "", "", "", "", "", ""],
-  ["2.1", "Сборка силосов №1–4", "18.09.2026", "02.11.2026", 4, "шт", "", "", ""],
+  ["1", "Нулевой цикл", "", "", "", "", "", "", "", ""],
+  ["1.1", "Свайное поле силосного корпуса", "20.07.2026", "24.08.2026", 320, "шт", 9600000, "", "", ""],
+  ["1.2", "Бетонирование ростверка", "25.08.2026", "20.09.2026", 300, "м³", 4500000, "", "", ""],
+  ["2", "Монтаж силосного корпуса", "", "", "", "", "", "", "", ""],
+  ["2.1", "Сборка силосов №1–4", "18.09.2026", "02.11.2026", 4, "шт", 74000000, "", "", ""],
 ];
 
 /** Поля этапа, появившиеся после первых версий: отставшая база их может не знать. */
-const OPTIONAL_COLUMNS = ["code", "tracking", "kind", "reason", "volume_total", "unit"];
+const OPTIONAL_COLUMNS = ["code", "tracking", "kind", "reason", "volume_total", "unit", "cost_total"];
 
 export default function ScheduleImport({ objectId, objectName, tasks, onClose, onDone }: Props) {
   const [missingColumns, setMissingColumns] = useState<Set<string>>(new Set());
@@ -86,7 +86,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
     const sheet = XLSX.utils.aoa_to_sheet(rows);
     sheet["!cols"] = [
       { wch: 8 }, { wch: 46 }, { wch: 13 }, { wch: 14 },
-      { wch: 10 }, { wch: 9 }, { wch: 13 }, { wch: 14 }, { wch: 9 },
+      { wch: 10 }, { wch: 9 }, { wch: 14 }, { wch: 13 }, { wch: 14 }, { wch: 9 },
     ];
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "ГПР");
@@ -123,6 +123,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
         t.end_plan ? fmtDate(t.end_plan) : "",
         t.volume_total ?? "",
         t.unit ?? "",
+        t.cost_total ?? "",
         t.start_fact ? fmtDate(t.start_fact) : "",
         t.end_fact ? fmtDate(t.end_fact) : "",
         t.progress_fact ?? "",
@@ -208,6 +209,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
           reason: null,
           volume_total: r.volumeTotal,
           unit: r.unit,
+          cost_total: r.costTotal,
           progress_fact: r.progressFact ?? 0,
           history: [{ at: now, text: `Загружено из ГПР (${fileName})` }],
           created_at: now,
@@ -244,6 +246,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
           patch.tracking = trackingFor(r.volumeTotal);
         }
         if (r.unit) patch.unit = r.unit;
+        if (r.costTotal !== null) patch.cost_total = r.costTotal;
         if (r.progressFact !== null) patch.progress_fact = r.progressFact;
         if (r.parentCode) patch.parent_id = codeToId.get(r.parentCode) ?? null;
 
@@ -399,6 +402,9 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
                     </span>
                     <span className="imp-vol mono">
                       {r.volumeTotal !== null ? `${fmtNum(r.volumeTotal, 3)} ${r.unit || ""}`.trim() : ""}
+                    </span>
+                    <span className="imp-cost mono">
+                      {r.costTotal !== null ? fmtMoney(r.costTotal) : ""}
                     </span>
                     <span className={`imp-act imp-act-${r.action}`}>
                       {r.action === "create" ? "новый" : r.action === "update" ? "изменить" : "без изменений"}

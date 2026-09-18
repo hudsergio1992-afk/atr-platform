@@ -32,6 +32,7 @@ import {
   fmtDate,
   fmtDateTime,
   fmtDeviation,
+  fmtMoney,
   fmtNum,
   fmtPercent,
   fmtRange,
@@ -62,6 +63,7 @@ type SortKey =
   | "progressFact"
   | "deviation"
   | "daysGain"
+  | "cost"
   | "status";
 
 const VIEW_LABEL: Record<ViewMode, string> = {
@@ -103,6 +105,7 @@ interface FormState {
   reason: string;
   volumeTotal: string;
   unit: string;
+  costTotal: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -119,6 +122,7 @@ const EMPTY_FORM: FormState = {
   reason: "",
   volumeTotal: "",
   unit: "",
+  costTotal: "",
 };
 
 const FIELD_LABEL: Record<keyof FormState, string> = {
@@ -135,6 +139,7 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   reason: "Основание",
   volumeTotal: "Объём",
   unit: "Ед. изм.",
+  costTotal: "Стоимость",
 };
 
 function toForm(t: ScheduleTask | null): FormState {
@@ -153,6 +158,7 @@ function toForm(t: ScheduleTask | null): FormState {
     reason: t.reason || "",
     volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
     unit: t.unit || "",
+    costTotal: t.cost_total != null ? String(t.cost_total) : "",
   };
 }
 
@@ -174,11 +180,22 @@ function diffText(
       if (k === "kind") return KIND_LABEL[v as TaskKind] || v;
       if (k.startsWith("start") || k.startsWith("end")) return fmtDate(v);
       if (k === "progressFact") return `${v}%`;
+      if (k === "costTotal") return fmtMoney(v);
       return v;
     };
     parts.push(`${FIELD_LABEL[k]}: ${disp(ov)} → ${disp(nv)}`);
   });
   return parts.join("; ");
+}
+
+/** Подсказка к столбцу стоимости: сколько освоено и сколько осталось. */
+function costWords(n: TaskNode): string {
+  if (n.costTotal === null) return "Стоимость не задана";
+  const done = n.costDone ?? 0;
+  const left = Math.round((n.costTotal - done) * 100) / 100;
+  const perUnit =
+    n.costPerUnit === null ? "" : `; цена за единицу ${fmtMoney(n.costPerUnit)}/${n.unit || "ед."}`;
+  return `Стоимость ${fmtMoney(n.costTotal)}; освоено ${fmtMoney(done)}; осталось ${fmtMoney(left)}${perUnit}`;
 }
 
 /** Оставляет узлы, подходящие под условие, вместе с их предками и потомками. */
@@ -392,6 +409,7 @@ export default function ScheduleModule() {
         case "progressFact": return n.progressFact;
         case "deviation": return n.deviation;
         case "daysGain": return n.daysGain;
+        case "cost": return n.costTotal;
         case "status": return STATUS_ORDER[n.status];
       }
     };
@@ -458,6 +476,36 @@ export default function ScheduleModule() {
     if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(pf)) return "";
     return String(Math.round(((total * pf) / 100) * 1000) / 1000);
   }, [form.volumeTotal, form.progressFact]);
+
+  /** Цена за единицу, отвечающая текущей стоимости и объёму. Считается, не хранится. */
+  const unitPrice = useMemo(() => {
+    const total = Number(form.volumeTotal);
+    const cost = Number(form.costTotal);
+    if (!Number.isFinite(total) || total <= 0) return "";
+    if (form.costTotal === "" || !Number.isFinite(cost)) return "";
+    return String(Math.round((cost / total) * 100) / 100);
+  }, [form.volumeTotal, form.costTotal]);
+
+  /** Вписали цену за единицу — стоимость этапа пересчитывается сама. */
+  function setUnitPrice(value: string) {
+    const total = Number(form.volumeTotal);
+    const price = Number(value);
+    if (!Number.isFinite(total) || total <= 0) return;
+    if (value === "") {
+      setForm((f) => ({ ...f, costTotal: "" }));
+      return;
+    }
+    if (!Number.isFinite(price)) return;
+    setForm((f) => ({ ...f, costTotal: String(Math.round(price * total * 100) / 100) }));
+  }
+
+  /** Освоено, ₽ — стоимость, приходящаяся на введённый процент готовности. */
+  const doneCost = useMemo(() => {
+    const cost = Number(form.costTotal);
+    const pf = Number(form.progressFact);
+    if (form.costTotal === "" || !Number.isFinite(cost) || !Number.isFinite(pf)) return null;
+    return Math.round(((cost * pf) / 100) * 100) / 100;
+  }, [form.costTotal, form.progressFact]);
 
   /** Ввели выполненный объём — процент готовности пересчитывается сам. */
   function setDoneVolume(value: string) {
@@ -732,6 +780,11 @@ export default function ScheduleModule() {
       setBanner("Объём должен быть неотрицательным числом.");
       return;
     }
+    const cost = form.costTotal === "" ? null : Number(form.costTotal);
+    if (cost !== null && (!Number.isFinite(cost) || cost < 0)) {
+      setBanner("Стоимость должна быть неотрицательным числом.");
+      return;
+    }
     if (vol !== null && !form.unit.trim()) {
       setBanner("У объёма не указана единица измерения.");
       return;
@@ -776,6 +829,7 @@ export default function ScheduleModule() {
       reason: form.kind === "extra" ? form.reason.trim() || null : null,
       volume_total: vol,
       unit: form.unit.trim() || null,
+      cost_total: cost,
       updated_at: now,
     };
 
@@ -903,6 +957,22 @@ export default function ScheduleModule() {
             <dt>Объём</dt>
             <dd className="mono">
               {n.volumeTotal != null ? `${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim() : "—"}
+            </dd>
+            <dt>Стоимость</dt>
+            <dd className="mono">{n.costTotal === null ? "—" : fmtMoney(n.costTotal)}</dd>
+            <dt>Цена за единицу</dt>
+            <dd className="mono">
+              {n.costPerUnit === null ? "—" : `${fmtMoney(n.costPerUnit)}/${n.unit || "ед."}`}
+            </dd>
+            <dt>Освоено</dt>
+            <dd>
+              <span className="mono">{n.costDone === null ? "—" : fmtMoney(n.costDone)}</span>
+              {n.costTotal !== null && n.costDone !== null && (
+                <span className="dev-words">
+                  {" "}
+                  — осталось {fmtMoney(Math.round((n.costTotal - n.costDone) * 100) / 100)}
+                </span>
+              )}
             </dd>
             <dt>% план</dt>
             <dd className="mono">{fmtPercent(n.progressPlan)}</dd>
@@ -1063,6 +1133,9 @@ export default function ScheduleModule() {
           >
             {fmtDaysGain(n.daysGain)}
           </div>
+          <div className="sch-c sch-c-cost mono" title={costWords(n)}>
+            {n.costTotal === null ? "—" : fmtMoney(n.costTotal)}
+          </div>
           <div className="sch-c sch-c-status">
             <span className={`status-pill ${SCHEDULE_STATUS_CLASS[n.status]}`}>
               {SCHEDULE_STATUS_LABEL[n.status]}
@@ -1083,6 +1156,11 @@ export default function ScheduleModule() {
             )}
             {n.volumeTotal != null && (
               <span className="mono">{`${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim()}</span>
+            )}
+            {n.costTotal !== null && (
+              <span className="mono">
+                {fmtMoney(n.costTotal)} · освоено {fmtMoney(n.costDone)}
+              </span>
             )}
           </div>
         </div>
@@ -1257,6 +1335,28 @@ export default function ScheduleModule() {
             итог <span className="n">{fmtDaysGain(summary.daysNet)}</span>
           </span>
         </div>
+
+        {summary.costTotal !== null && (
+          <div className="chip-row">
+            <span className="chip st-neutral" title="Стоимость работ, у которых она проставлена">
+              стоимость <span className="n mono">{fmtMoney(summary.costTotal)}</span>
+            </span>
+            <span className="chip st-good" title="Стоимость, приходящаяся на выполненные проценты">
+              освоено <span className="n mono">{fmtMoney(summary.costDone)}</span>
+              {summary.costTotal > 0 && (
+                <span className="chip-sub">
+                  {" "}
+                  {fmtPercent(
+                    Math.round(((summary.costDone || 0) / summary.costTotal) * 1000) / 10
+                  )}
+                </span>
+              )}
+            </span>
+            <span className="chip st-warn" title="Сколько ещё предстоит освоить">
+              осталось <span className="n mono">{fmtMoney(summary.costLeft)}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="toolbar">
@@ -1351,6 +1451,7 @@ export default function ScheduleModule() {
             <div className="sch-c sch-c-pf" title="Сколько готово на самом деле">% факт</div>
             <div className="sch-c sch-c-dev" title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение">Откл.</div>
             <div className="sch-c sch-c-days" title="Дни относительно планового окончания: плюс — раньше срока, минус — позже или просрочено">Дни ±</div>
+            <div className="sch-c sch-c-cost" title="Стоимость этапа; в подсказке к строке — сколько из неё освоено">Стоимость</div>
             <div className="sch-c sch-c-status">Статус</div>
           </div>
           {showRows && treeRows.length ? (
@@ -1395,6 +1496,13 @@ export default function ScheduleModule() {
               onClick={() => sortBy("daysGain")}
             >
               Дни ±{sortArrow("daysGain")}
+            </button>
+            <button
+              className="sch-c sch-c-cost"
+              title="Стоимость этапа; в подсказке к строке — сколько из неё освоено"
+              onClick={() => sortBy("cost")}
+            >
+              Стоимость{sortArrow("cost")}
             </button>
             <button className="sch-c sch-c-status" onClick={() => sortBy("status")}>
               Статус{sortArrow("status")}
@@ -1773,6 +1881,38 @@ export default function ScheduleModule() {
             отмечается только процентом.
           </p>
 
+          <div className="field-row">
+            <div className="field">
+              <label>Стоимость этапа, ₽</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="0"
+                disabled={editingIsGroup}
+                value={form.costTotal}
+                onChange={(e) => setForm({ ...form, costTotal: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>Цена за единицу, ₽</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder={form.volumeTotal ? "0" : "нужен объём работы"}
+                disabled={editingIsGroup || !form.volumeTotal}
+                value={unitPrice}
+                onChange={(e) => setUnitPrice(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Хранится только стоимость этапа — по договору или по смете. Цена за единицу
+            считается от неё и объёма и служит вторым способом ввести то же самое:
+            впишете расценку — получите сумму. Освоение считается от процента готовности.
+          </p>
+
           <div className="calc-box">
             <h4>Расчёт</h4>
             <dl>
@@ -1786,6 +1926,8 @@ export default function ScheduleModule() {
               <dd className="mono" title={deviationWords(formPreview.deviation)}>
                 {fmtDeviation(formPreview.deviation)}
               </dd>
+              <dt>Освоено, ₽</dt>
+              <dd className="mono">{doneCost === null ? "—" : fmtMoney(doneCost)}</dd>
             </dl>
             <p className="hint">
               Считается автоматически по датам и % факта, в БД не хранится.

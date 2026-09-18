@@ -8,6 +8,11 @@ export const LAG_TOLERANCE = 5;
 
 const MS_PER_DAY = 86_400_000;
 
+/** Рубли и копейки: длинные хвосты после деления никому не нужны. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 /** "YYYY-MM-DD" -> миллисекунды UTC-полуночи. null при пустом/битом значении. */
 export function parseDay(iso: string | null | undefined): number | null {
   if (!iso) return null;
@@ -84,6 +89,16 @@ export interface TaskNode {
   /** Общий натуральный объём; у группы — сумма, только если единица у детей одна. */
   volumeTotal: number | null;
   unit: string | null;
+  /** Стоимость этапа, ₽; у группы — сумма стоимостей подэтапов. */
+  costTotal: number | null;
+  /**
+   * Освоено, ₽ — стоимость, приходящаяся на выполненный процент. У группы
+   * складывается по детям, а не берётся от её усреднённого процента: иначе
+   * дорогой невыполненный этап прятался бы за дешёвым закрытым.
+   */
+  costDone: number | null;
+  /** Цена за единицу объёма, ₽ — стоимость, делённая на объём. */
+  costPerUnit: number | null;
   progressPlan: number | null;
   progressFact: number;
   /** факт − план в процентных пунктах; null, если план не считается. */
@@ -230,6 +245,10 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         task.volume_total === null || task.volume_total === undefined
           ? null
           : Number(task.volume_total);
+      const costTotal =
+        task.cost_total === null || task.cost_total === undefined || !Number.isFinite(Number(task.cost_total))
+          ? null
+          : Number(task.cost_total);
       return {
         task,
         children,
@@ -244,6 +263,12 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         kind: task.kind === "extra" ? "extra" : "plan",
         volumeTotal: volumeTotal !== null && Number.isFinite(volumeTotal) ? volumeTotal : null,
         unit: task.unit || null,
+        costTotal,
+        costDone: costTotal === null ? null : round2((costTotal * progressFact) / 100),
+        costPerUnit:
+          costTotal === null || !volumeTotal || volumeTotal <= 0
+            ? null
+            : round2(costTotal / volumeTotal),
         progressPlan,
         progressFact,
         deviation,
@@ -270,6 +295,15 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       ? withVolume.reduce((s, c) => s + (c.volumeTotal || 0), 0)
       : null;
     const unit = sameUnit ? withVolume[0].unit : null;
+
+    // Деньги складываются всегда: рубль везде рубль, единицы сходиться не обязаны.
+    const withCost = children.filter((c) => c.costTotal !== null);
+    const costTotal = withCost.length
+      ? round2(withCost.reduce((sum, c) => sum + (c.costTotal || 0), 0))
+      : null;
+    const costDone = withCost.length
+      ? round2(withCost.reduce((sum, c) => sum + (c.costDone || 0), 0))
+      : null;
 
     const totalWeight = children.reduce((s, c) => s + c.weight, 0) || children.length;
     const wAvg = (pick: (c: TaskNode) => number | null): number | null => {
@@ -314,6 +348,12 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
           : "plan",
       volumeTotal,
       unit,
+      costTotal,
+      costDone,
+      costPerUnit:
+        costTotal === null || !volumeTotal || volumeTotal <= 0
+          ? null
+          : round2(costTotal / volumeTotal),
       progressPlan,
       progressFact,
       deviation,
@@ -354,6 +394,12 @@ export interface ScheduleSummary {
   daysLate: number;
   /** Сальдо: плюс — общий выигрыш, минус — общая потеря. */
   daysNet: number;
+  /** Стоимость всех работ, ₽; null — цены не проставлены ни у одной. */
+  costTotal: number | null;
+  /** Освоено, ₽ — сумма по выполненным процентам. */
+  costDone: number | null;
+  /** Осталось освоить, ₽. */
+  costLeft: number | null;
   progressPlan: number | null;
   progressFact: number | null;
   startPlan: string | null;
@@ -384,6 +430,15 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     else if (n.daysGain < 0) daysLate += -n.daysGain;
   }
 
+  // Деньги — тоже по листьям: стоимость раздела это и есть сумма его работ.
+  const priced = base.filter((n) => n.costTotal !== null);
+  const costTotal = priced.length
+    ? Math.round(priced.reduce((sum, n) => sum + (n.costTotal || 0), 0) * 100) / 100
+    : null;
+  const costDone = priced.length
+    ? Math.round(priced.reduce((sum, n) => sum + (n.costDone || 0), 0) * 100) / 100
+    : null;
+
   const wSum = (pick: (n: TaskNode) => number | null): number | null => {
     let sum = 0;
     let used = 0;
@@ -405,6 +460,12 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     daysAhead,
     daysLate,
     daysNet: daysAhead - daysLate,
+    costTotal,
+    costDone,
+    costLeft:
+      costTotal === null || costDone === null
+        ? null
+        : Math.round((costTotal - costDone) * 100) / 100,
     progressPlan: wSum((n) => n.progressPlan),
     progressFact: wSum((n) => n.progressFact),
     startPlan: minDay(all.map((n) => n.startPlan)),

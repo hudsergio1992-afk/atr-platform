@@ -56,6 +56,10 @@ create table if not exists public.schedule_tasks (
   -- недельные задания (модуль «Недельные задания»).
   volume_total  numeric(14, 3) check (volume_total is null or volume_total >= 0),
   unit          text,
+  -- Стоимость этапа целиком, в рублях. Единственная денежная величина, которая
+  -- хранится: цена за единицу и освоение считаются от неё и объёма,
+  -- иначе три числа разъезжаются между собой.
+  cost_total    numeric(14, 2) check (cost_total is null or cost_total >= 0),
   history       jsonb       not null default '[]'::jsonb,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -64,6 +68,8 @@ create table if not exists public.schedule_tasks (
 -- Для баз, созданных до появления натуральных объёмов.
 alter table public.schedule_tasks add column if not exists volume_total numeric(14, 3);
 alter table public.schedule_tasks add column if not exists unit text;
+-- Стоимость этапа.
+alter table public.schedule_tasks add column if not exists cost_total numeric(14, 2);
 -- Нормочасы из платформы убраны: трудозатраты здесь не ведутся.
 alter table public.schedule_tasks drop column if exists norm_hours;
 -- Способ учёта выполнения. Этапы, заведённые до его появления, считаются
