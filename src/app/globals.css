@@ -253,6 +253,9 @@ tr.detail-row td { padding: 0; }
 
 /* ---- Общие мелочи ---- */
 .hint { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+/* Расшифровка отклонения словами рядом с числом. */
+.dev-words { color: var(--muted); font-size: 12.5px; }
+.sch-c-dev, .wk-c-dev { cursor: help; }
 .modtab.link { text-decoration: none; cursor: pointer; }
 .modtab.link:hover { background: var(--surface-2); color: var(--ink); }
 .modtab.link.active { background: var(--accent); color: var(--accent-ink); }

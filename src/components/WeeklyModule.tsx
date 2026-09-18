@@ -26,7 +26,15 @@ import {
   weekEndOf,
   weekLabel,
 } from "@/lib/weekly";
-import { fmtDate, fmtDateTime, fmtDeviation, fmtNum, fmtPercent, plural } from "@/lib/format";
+import {
+  deviationWords,
+  fmtDate,
+  fmtDateTime,
+  fmtDeviation,
+  fmtNum,
+  fmtPercent,
+  plural,
+} from "@/lib/format";
 import { readSetting, useToday, writeSetting } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 
@@ -660,7 +668,10 @@ export default function WeeklyModule() {
               )}
             </dd>
             <dt>Отклонение</dt>
-            <dd className="mono">{fmtDeviation(d.deviation)}</dd>
+            <dd>
+              <span className="mono">{fmtDeviation(d.deviation)}</span>
+              <span className="dev-words"> — {deviationWords(d.deviation)}</span>
+            </dd>
             <dt>Бригада</dt>
             <dd>{item.crew || "—"}</dd>
             <dt>Примечание</dt>
@@ -820,7 +831,10 @@ export default function WeeklyModule() {
               />
             )}
           </div>
-          <div className={`wk-c wk-c-dev mono${deviation != null && deviation < 0 ? " is-neg" : ""}`}>
+          <div
+            className={`wk-c wk-c-dev mono${deviation != null && deviation < 0 ? " is-neg" : ""}`}
+            title={deviationWords(deviation)}
+          >
             {fmtDeviation(deviation)}
           </div>
           <div className="wk-c wk-c-status" onClick={() => setDetailId((c) => (c === item.id ? null : item.id))}>
@@ -978,7 +992,7 @@ export default function WeeklyModule() {
           <div className="wk-c wk-c-done">Вып.</div>
           <div className="wk-c wk-c-pp">% план</div>
           <div className="wk-c wk-c-pf">% факт</div>
-          <div className="wk-c wk-c-dev">Откл.</div>
+          <div className="wk-c wk-c-dev" title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение">Откл.</div>
           <div className="wk-c wk-c-status">Статус</div>
         </div>
         {loadingWeek || !today ? (

@@ -42,6 +42,18 @@ export function fmtPercent(n: number | null | undefined): string {
   return fmtNum(n, 1) + "%";
 }
 
+/** Отклонение словами: «отстаёт на 12,3 пункта» — понятнее сухого «−12,3 п.п.». */
+export function deviationWords(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "нет данных для сравнения";
+  const v = Number(n);
+  if (Math.abs(v) < 0.05) return "идёт ровно по плану";
+  const size = fmtNum(Math.abs(v), 1);
+  const unit = plural(Math.abs(v), "пункт", "пункта", "пунктов");
+  return v < 0
+    ? `отстаёт от плана на ${size} ${unit}`
+    : `опережает план на ${size} ${unit}`;
+}
+
 /** Отклонение со знаком: -12.3 -> "−12,3 п.п.". */
 export function fmtDeviation(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(Number(n))) return "—";

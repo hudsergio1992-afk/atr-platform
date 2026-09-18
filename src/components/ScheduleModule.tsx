@@ -33,6 +33,7 @@ import {
   fmtNum,
   fmtPercent,
   fmtRange,
+  deviationWords,
   plural,
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
@@ -737,7 +738,10 @@ export default function ScheduleModule() {
             <dt>% факт</dt>
             <dd className="mono">{fmtPercent(n.progressFact)}</dd>
             <dt>Отклонение</dt>
-            <dd className="mono">{fmtDeviation(n.deviation)}</dd>
+            <dd>
+              <span className="mono">{fmtDeviation(n.deviation)}</span>
+              <span className="dev-words"> — {deviationWords(n.deviation)}</span>
+            </dd>
             <dt>Статус</dt>
             <dd>
               <span className={`status-pill ${SCHEDULE_STATUS_CLASS[n.status]}`}>
@@ -867,6 +871,7 @@ export default function ScheduleModule() {
             className={`sch-c sch-c-dev mono${
               n.deviation != null && n.deviation < 0 ? " is-neg" : ""
             }`}
+            title={deviationWords(n.deviation)}
           >
             {fmtDeviation(n.deviation)}
           </div>
@@ -1054,9 +1059,9 @@ export default function ScheduleModule() {
             <div className="sch-c sch-c-plan">Сроки план</div>
             <div className="sch-c sch-c-dur">Дней</div>
             <div className="sch-c sch-c-fact">Сроки факт</div>
-            <div className="sch-c sch-c-pp">% план</div>
-            <div className="sch-c sch-c-pf">% факт</div>
-            <div className="sch-c sch-c-dev">Откл.</div>
+            <div className="sch-c sch-c-pp" title="Сколько должно быть готово по календарю на сегодня">% план</div>
+            <div className="sch-c sch-c-pf" title="Сколько готово на самом деле">% факт</div>
+            <div className="sch-c sch-c-dev" title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение">Откл.</div>
             <div className="sch-c sch-c-status">Статус</div>
           </div>
           {showRows && treeRows.length ? (
@@ -1088,7 +1093,11 @@ export default function ScheduleModule() {
             <button className="sch-c sch-c-pf" onClick={() => sortBy("progressFact")}>
               % факт{sortArrow("progressFact")}
             </button>
-            <button className="sch-c sch-c-dev" onClick={() => sortBy("deviation")}>
+            <button
+              className="sch-c sch-c-dev"
+              title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение"
+              onClick={() => sortBy("deviation")}
+            >
               Откл.{sortArrow("deviation")}
             </button>
             <button className="sch-c sch-c-status" onClick={() => sortBy("status")}>
@@ -1424,7 +1433,9 @@ export default function ScheduleModule() {
               <dt>% готовности план</dt>
               <dd className="mono">{fmtPercent(formPreview.progressPlan)}</dd>
               <dt>Отклонение план-факт</dt>
-              <dd className="mono">{fmtDeviation(formPreview.deviation)}</dd>
+              <dd className="mono" title={deviationWords(formPreview.deviation)}>
+                {fmtDeviation(formPreview.deviation)}
+              </dd>
             </dl>
             <p className="hint">
               Считается автоматически по датам и % факта, в БД не хранится.
