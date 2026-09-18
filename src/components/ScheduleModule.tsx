@@ -41,6 +41,7 @@ import {
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
 import { STAGE_TEMPLATES, STAGE_TEMPLATES_COUNT } from "@/lib/stages";
 import SchemaSetup from "@/components/SchemaSetup";
+import ScheduleImport from "@/components/ScheduleImport";
 
 type ViewMode = "tree" | "table" | "gantt";
 type SortKey =
@@ -214,6 +215,7 @@ export default function ScheduleModule() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+  const [importOpen, setImportOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogPicked, setCatalogPicked] = useState<Set<string>>(new Set());
@@ -1089,6 +1091,14 @@ export default function ScheduleModule() {
         <div className="toolbar-actions">
           <button
             className="btn btn-ghost"
+            onClick={() => setImportOpen(true)}
+            disabled={!objectId}
+            title="Перенести готовый график производства работ из Excel"
+          >
+            Загрузить ГПР
+          </button>
+          <button
+            className="btn btn-ghost"
             onClick={() => setCatalogOpen(true)}
             disabled={!objectId}
             title={`${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства`}
@@ -1193,6 +1203,21 @@ export default function ScheduleModule() {
             <div className="empty-state">{emptyText}</div>
           </div>
         ))}
+
+      <div className={`overlay${importOpen ? " show" : ""}`} onClick={() => setImportOpen(false)} />
+      {importOpen && (
+        <ScheduleImport
+          objectId={objectId}
+          objectName={currentObject?.name || "объект"}
+          tasks={tasks}
+          onClose={() => setImportOpen(false)}
+          onDone={async (message) => {
+            setBanner(message);
+            setImportOpen(false);
+            await loadTasks(objectId);
+          }}
+        />
+      )}
 
       <div
         className={`overlay${catalogOpen ? " show" : ""}`}

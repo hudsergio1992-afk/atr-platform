@@ -30,6 +30,10 @@ create table if not exists public.schedule_tasks (
   object_id     uuid        not null references public.objects (id) on delete cascade,
   parent_id     uuid        references public.schedule_tasks (id) on delete cascade,
   sort_order    integer     not null default 0,
+  -- Шифр этапа из ГПР: «1», «1.1», «1.1.2». Задаёт иерархию при загрузке файлом
+  -- и служит постоянным ключом — повторная загрузка правленого ГПР обновляет
+  -- существующие этапы, а не плодит копии.
+  code          text,
   name          text        not null,
   start_plan    date,
   end_plan      date,
@@ -82,6 +86,9 @@ update public.schedule_tasks set tracking = 'volume'
 alter table public.schedule_tasks
   add column if not exists kind text not null default 'plan';
 alter table public.schedule_tasks add column if not exists reason text;
+alter table public.schedule_tasks add column if not exists code text;
+create unique index if not exists schedule_tasks_code_idx
+  on public.schedule_tasks (object_id, code) where code is not null;
 do $$
 begin
   if not exists (

@@ -510,6 +510,45 @@ tr.detail-row td { padding: 0; }
     }
 }
 
+/* ---- Загрузка ГПР ---- */
+.imp-summary { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 0; }
+.imp-errors {
+    border: 1px solid var(--st-bad-ink); border-radius: 8px; padding: 12px 14px;
+    background: var(--st-bad-bg);
+}
+.imp-errors h4 { margin: 0 0 8px; font-size: 13px; color: var(--st-bad-ink); }
+.imp-errors ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--st-bad-ink); }
+.imp-errors li { margin-bottom: 4px; }
+.imp-rows {
+    border: 1px solid var(--border); border-radius: 8px; max-height: 340px; overflow: auto;
+}
+.imp-row {
+    display: grid; grid-template-columns: 54px minmax(0, 1fr) 120px 78px 92px;
+    gap: 10px; align-items: center; padding: 6px 10px; font-size: 12.5px;
+    border-top: 1px solid var(--border);
+}
+.imp-row:first-child { border-top: none; }
+.imp-code { color: var(--muted); }
+.imp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-dates, .imp-vol { color: var(--muted); font-size: 11.5px; text-align: right; }
+.imp-act {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600;
+    border-radius: 5px; padding: 2px 6px; text-align: center;
+}
+.imp-act-create { background: var(--st-good-bg); color: var(--st-good-ink); }
+.imp-act-update { background: var(--st-warn-bg); color: var(--st-warn-ink); }
+.imp-act-same { background: var(--st-neutral-bg); color: var(--st-neutral-ink); }
+.imp-missing {
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+    background: var(--surface-2); font-size: 13px;
+}
+.imp-missing p { margin: 0 0 8px; }
+
+@media (max-width: 720px) {
+    .imp-row { grid-template-columns: 52px minmax(0, 1fr) 88px; }
+    .imp-dates, .imp-vol { display: none; }
+}
+
 /* ---- Подготовка хранилища ---- */
 .setup {
     border: 1px solid var(--border); border-left: 3px solid var(--accent);
@@ -535,6 +574,8 @@ tr.detail-row td { padding: 0; }
 
 /* ---- Справочник этапов ---- */
 .panel.panel-wide { width: min(560px, 100vw); }
+/* Загрузка ГПР показывает таблицу строк — ей нужно больше места. */
+.panel.panel-import { width: min(820px, 100vw); }
 /* flex: 0 0 auto — иначе flex-контейнер панели сжимает разделы и работы наезжают. */
 .cat-group { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .cat-group-head {

@@ -88,6 +88,8 @@ export interface ScheduleTask {
   object_id: string;
   parent_id: string | null;
   sort_order: number;
+  /** Шифр из ГПР: «1», «1.1», «1.1.2». Задаёт иерархию при загрузке файлом. */
+  code: string | null;
   name: string;
   start_plan: string | null;
   end_plan: string | null;
