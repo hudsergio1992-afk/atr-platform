@@ -55,3 +55,17 @@ export function fmtRange(from: string | null, to: string | null): string {
   if (!from && !to) return "—";
   return `${fmtDate(from)}–${fmtDate(to)}`;
 }
+
+/**
+ * Русское склонение после числа: plural(1, "этап", "этапа", "этапов") -> "этап".
+ * Учитывает, что 11–14 ведут себя как «много», а не как 1–4.
+ */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(Math.trunc(n));
+  const mod100 = abs % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = abs % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}

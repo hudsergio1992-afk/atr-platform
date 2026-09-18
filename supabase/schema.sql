@@ -38,6 +38,12 @@ create table if not exists public.schedule_tasks (
   -- силоса, монтаж нории, пусконаладка).
   tracking      text        not null default 'percent'
                 check (tracking in ('volume', 'percent')),
+  -- Откуда работа взялась: 'plan' — была в первоначальном графике,
+  -- 'extra' — вскрылась по ходу стройки (предписание, допсоглашение, переделка).
+  kind          text        not null default 'plan'
+                check (kind in ('plan', 'extra')),
+  -- Основание непредвиденной работы.
+  reason        text,
   -- Натуральный объём работы и его единица измерения: от них считаются
   -- недельные задания (модуль «Недельные задания»).
   volume_total  numeric(14, 3) check (volume_total is null or volume_total >= 0),
@@ -67,6 +73,20 @@ begin
 end $$;
 update public.schedule_tasks set tracking = 'volume'
   where volume_total is not null and volume_total > 0 and tracking = 'percent';
+
+-- Признак непредвиденной работы и её основание.
+alter table public.schedule_tasks
+  add column if not exists kind text not null default 'plan';
+alter table public.schedule_tasks add column if not exists reason text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'schedule_tasks_kind_check'
+  ) then
+    alter table public.schedule_tasks
+      add constraint schedule_tasks_kind_check check (kind in ('plan', 'extra'));
+  end if;
+end $$;
 
 create index if not exists schedule_tasks_object_idx on public.schedule_tasks (object_id, sort_order);
 create index if not exists schedule_tasks_parent_idx on public.schedule_tasks (parent_id);

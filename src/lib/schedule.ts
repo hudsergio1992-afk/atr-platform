@@ -1,4 +1,4 @@
-import { ScheduleStatus, ScheduleTask, TrackingMode } from "@/lib/types";
+import { ScheduleStatus, ScheduleTask, TaskKind, TrackingMode } from "@/lib/types";
 
 /**
  * Допуск отклонения план-факт в процентных пунктах: пока факт отстаёт
@@ -79,6 +79,8 @@ export interface TaskNode {
   durationPlan: number | null;
   /** Способ учёта выполнения; у группы — 'volume', только если так учитываются все дети. */
   tracking: TrackingMode;
+  /** По графику или непредвиденная; у группы — 'extra', если непредвиденны все дети. */
+  kind: TaskKind;
   /** Общий натуральный объём; у группы — сумма, только если единица у детей одна. */
   volumeTotal: number | null;
   unit: string | null;
@@ -196,6 +198,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         endFact: task.end_fact,
         durationPlan,
         tracking: task.tracking === "volume" ? "volume" : "percent",
+        kind: task.kind === "extra" ? "extra" : "plan",
         volumeTotal: volumeTotal !== null && Number.isFinite(volumeTotal) ? volumeTotal : null,
         unit: task.unit || null,
         progressPlan,
@@ -258,6 +261,12 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         children.length > 0 && children.every((c) => c.tracking === "volume")
           ? "volume"
           : "percent",
+      // Раздел считается непредвиденным, только когда непредвиденны все его работы:
+      // иначе плановый раздел с одной допработой выглядел бы целиком внеплановым.
+      kind:
+        task.kind === "extra" || (children.length > 0 && children.every((c) => c.kind === "extra"))
+          ? "extra"
+          : "plan",
       volumeTotal,
       unit,
       progressPlan,
@@ -290,6 +299,8 @@ export interface ScheduleSummary {
   onTrack: number;
   behind: number;
   closed: number;
+  /** Сколько работ вскрылось по ходу стройки. */
+  extra: number;
   progressPlan: number | null;
   progressFact: number | null;
   startPlan: string | null;
@@ -304,10 +315,12 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
   let onTrack = 0;
   let behind = 0;
   let closed = 0;
+  let extra = 0;
   for (const n of all) {
     if (n.status === "behind") behind++;
     else if (n.status === "closed") closed++;
     else onTrack++;
+    if (n.kind === "extra") extra++;
   }
 
   const wSum = (pick: (n: TaskNode) => number | null): number | null => {
@@ -327,6 +340,7 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     onTrack,
     behind,
     closed,
+    extra,
     progressPlan: wSum((n) => n.progressPlan),
     progressFact: wSum((n) => n.progressFact),
     startPlan: minDay(all.map((n) => n.startPlan)),

@@ -58,6 +58,19 @@ export type ScheduleStatus = "on_track" | "behind" | "closed";
  */
 export type TrackingMode = "volume" | "percent";
 
+/**
+ * Откуда работа взялась. plan — была в первоначальном графике;
+ * extra — вскрылась по ходу стройки: скрытые конструкции, предписание
+ * надзора, переделка, допсоглашение. Различать их нужно, чтобы при разборе
+ * сроков было видно, сколько времени ушло на то, чего в проекте не было.
+ */
+export type TaskKind = "plan" | "extra";
+
+export const KIND_LABEL: Record<TaskKind, string> = {
+  plan: "По графику",
+  extra: "Непредвиденная",
+};
+
 export const TRACKING_LABEL: Record<TrackingMode, string> = {
   volume: "По объёму работ",
   percent: "По проценту готовности",
@@ -81,6 +94,10 @@ export interface ScheduleTask {
   progress_fact: number | null;
   /** Способ учёта выполнения: объёмом или процентом. */
   tracking: TrackingMode;
+  /** По графику или непредвиденная. */
+  kind: TaskKind;
+  /** Основание непредвиденной работы: предписание, допсоглашение, вскрытые условия. */
+  reason: string | null;
   /**
    * Общий натуральный объём работы. При учёте по объёму от него считаются
    * недельные задания и процент готовности; при учёте по проценту остаётся

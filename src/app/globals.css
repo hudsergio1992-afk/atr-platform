@@ -160,6 +160,8 @@ select.filter {
     font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .btn-primary { background: var(--accent); color: var(--accent-ink); margin-left: auto; }
+/* Кнопки действий держатся вместе и прижимаются вправо одной группой. */
+.toolbar-actions { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--border); }
 .btn-ghost:hover { background: var(--surface-2); }
@@ -311,6 +313,12 @@ tr.detail-row td { padding: 0; }
 .sch-c-name { display: flex; align-items: center; gap: 6px; }
 .sch-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sch-parent { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+/* Метка работы, которой не было в первоначальном графике. */
+.tag-extra {
+    flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+    font-weight: 700; border-radius: 5px; padding: 1px 5px; cursor: help;
+    background: var(--st-warn-bg); color: var(--st-warn-ink);
+}
 .sch-caret {
     flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; padding: 0;
     border: none; background: none; color: var(--muted); cursor: pointer; font-size: 11px;
@@ -446,6 +454,7 @@ tr.detail-row td { padding: 0; }
 .wk-c { padding: 7px 10px; font-size: 13px; min-width: 0; }
 .wk-c-name { display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
 .wk-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-name-text .tag-extra { margin-left: 6px; vertical-align: 1px; }
 .wk-crew { font-size: 11.5px; color: var(--muted); }
 .wk-c-status { cursor: pointer; }
 .wk-c-plan, .wk-c-done, .wk-c-pp, .wk-c-dev { text-align: right; }

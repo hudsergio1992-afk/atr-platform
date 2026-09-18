@@ -10,7 +10,9 @@ import {
   SCHEDULE_STATUS_CLASS,
   SCHEDULE_STATUS_LABEL,
   ScheduleStatus,
+  KIND_LABEL,
   ScheduleTask,
+  TaskKind,
   TRACKING_LABEL,
   TrackingMode,
   UNITS,
@@ -31,6 +33,7 @@ import {
   fmtNum,
   fmtPercent,
   fmtRange,
+  plural,
 } from "@/lib/format";
 import ScheduleGantt, { GanttScale } from "@/components/ScheduleGantt";
 import { STAGE_TEMPLATES, STAGE_TEMPLATES_COUNT } from "@/lib/stages";
@@ -73,6 +76,8 @@ interface FormState {
   endFact: string;
   progressFact: string;
   tracking: TrackingMode;
+  kind: TaskKind;
+  reason: string;
   volumeTotal: string;
   unit: string;
 }
@@ -87,6 +92,8 @@ const EMPTY_FORM: FormState = {
   endFact: "",
   progressFact: "",
   tracking: "percent",
+  kind: "plan",
+  reason: "",
   volumeTotal: "",
   unit: "",
 };
@@ -101,6 +108,8 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   endFact: "Окончание (факт)",
   progressFact: "% готовности факт",
   tracking: "Способ учёта",
+  kind: "Происхождение работы",
+  reason: "Основание",
   volumeTotal: "Объём",
   unit: "Ед. изм.",
 };
@@ -117,6 +126,8 @@ function toForm(t: ScheduleTask | null): FormState {
     endFact: t.end_fact || "",
     progressFact: t.progress_fact != null ? String(t.progress_fact) : "",
     tracking: t.tracking === "volume" ? "volume" : "percent",
+    kind: t.kind === "extra" ? "extra" : "plan",
+    reason: t.reason || "",
     volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
     unit: t.unit || "",
   };
@@ -137,6 +148,7 @@ function diffText(
       if (!v) return "—";
       if (k === "parentId") return nameById.get(v) || v;
       if (k === "tracking") return TRACKING_LABEL[v as TrackingMode] || v;
+      if (k === "kind") return KIND_LABEL[v as TaskKind] || v;
       if (k.startsWith("start") || k.startsWith("end")) return fmtDate(v);
       if (k === "progressFact") return `${v}%`;
       return v;
@@ -189,6 +201,7 @@ export default function ScheduleModule() {
   const [scale, setScale] = useState<GanttScale>("week");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterKind, setFilterKind] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("startPlan");
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -286,15 +299,16 @@ export default function ScheduleModule() {
       const q = search.trim().toLowerCase();
       if (q && n.task.name.toLowerCase().indexOf(q) === -1) return false;
       if (filterStatus && n.status !== filterStatus) return false;
+      if (filterKind && (n.task.kind === "extra" ? "extra" : "plan") !== filterKind) return false;
       return true;
     },
-    [search, filterStatus]
+    [search, filterStatus, filterKind]
   );
 
   const filteredTree = useMemo(() => {
-    if (!search.trim() && !filterStatus) return tree;
+    if (!search.trim() && !filterStatus && !filterKind) return tree;
     return filterTree(tree, matches);
-  }, [tree, search, filterStatus, matches]);
+  }, [tree, search, filterStatus, filterKind, matches]);
 
   const summary = useMemo(() => summarize(tree), [tree]);
 
@@ -390,7 +404,15 @@ export default function ScheduleModule() {
     } else {
       const siblings = tasks.filter((x) => (x.parent_id || "") === (presetParent || ""));
       const nextOrder = siblings.reduce((max, x) => Math.max(max, x.sort_order ?? 0), 0) + 10;
-      setForm({ ...EMPTY_FORM, parentId: presetParent || "", sortOrder: String(nextOrder) });
+      // В пустом графике работы заводят по проекту; в начатом — обычно это то,
+      // что вскрылось по ходу, поэтому подставляем «непредвиденная».
+      const started = tasks.some((x) => x.start_fact || Number(x.progress_fact) > 0);
+      setForm({
+        ...EMPTY_FORM,
+        parentId: presetParent || "",
+        sortOrder: String(nextOrder),
+        kind: started ? "extra" : "plan",
+      });
     }
     setPanelOpen(true);
   }
@@ -610,6 +632,10 @@ export default function ScheduleModule() {
       setBanner("При учёте по объёму нужно указать объём работы больше нуля.");
       return;
     }
+    if (form.kind === "extra" && !form.reason.trim()) {
+      setBanner("У непредвиденной работы укажите основание — через полгода никто не вспомнит, откуда она взялась.");
+      return;
+    }
 
     setBanner(null);
     setSaving(true);
@@ -626,6 +652,8 @@ export default function ScheduleModule() {
       end_fact: form.endFact || null,
       progress_fact: clampPercent(pf),
       tracking: form.tracking,
+      kind: form.kind,
+      reason: form.kind === "extra" ? form.reason.trim() || null : null,
       volume_total: vol,
       unit: form.unit.trim() || null,
       updated_at: now,
@@ -686,6 +714,11 @@ export default function ScheduleModule() {
             <dd className="mono">{fmtRange(n.startFact, n.endFact)}</dd>
             <dt>Длительность</dt>
             <dd className="mono">{n.durationPlan ? `${n.durationPlan} дн.` : "—"}</dd>
+            <dt>Происхождение</dt>
+            <dd>
+              {KIND_LABEL[n.task.kind === "extra" ? "extra" : "plan"]}
+              {n.task.kind === "extra" && n.task.reason ? ` — ${n.task.reason}` : ""}
+            </dd>
             <dt>Учёт</dt>
             <dd>{TRACKING_LABEL[n.tracking]}</dd>
             <dt>Объём</dt>
@@ -803,6 +836,11 @@ export default function ScheduleModule() {
               isTree && <span className="sch-caret placeholder" />
             )}
             <span className="sch-name-text">{n.task.name}</span>
+            {n.task.kind === "extra" && (
+              <span className="tag-extra" title={n.task.reason || "Непредвиденная работа"}>
+                доп
+              </span>
+            )}
             {!isTree && parentName && <span className="sch-parent">в составе «{parentName}»</span>}
           </div>
           <div className="sch-c sch-c-plan mono">{fmtRange(n.startPlan, n.endPlan)}</div>
@@ -894,7 +932,9 @@ export default function ScheduleModule() {
       <div className="stats">
         <div className="stat-total">
           <span className="n">{showRows ? summary.total : "—"}</span>
-          <span className="l">этапов в графике</span>
+          <span className="l">
+            {plural(summary.total, "этап в графике", "этапа в графике", "этапов в графике")}
+          </span>
         </div>
         <div className="chip-row">
           <span className="chip st-good">
@@ -906,6 +946,12 @@ export default function ScheduleModule() {
           <span className="chip st-neutral">
             <span className="n">{summary.closed}</span> закрыто
           </span>
+          {summary.extra > 0 && (
+            <span className="chip st-warn">
+              <span className="n">{summary.extra}</span>{" "}
+              {plural(summary.extra, "непредвиденная", "непредвиденные", "непредвиденных")}
+            </span>
+          )}
         </div>
         <div className="chip-row">
           <span className="chip st-neutral">
@@ -944,6 +990,11 @@ export default function ScheduleModule() {
           <option value="behind">Отставание</option>
           <option value="closed">Закрыт</option>
         </select>
+        <select className="filter" value={filterKind} onChange={(e) => setFilterKind(e.target.value)}>
+          <option value="">Все работы</option>
+          <option value="plan">Только по графику</option>
+          <option value="extra">Только непредвиденные</option>
+        </select>
         <div className="seg" role="group" aria-label="Вид отображения">
           {(["tree", "table", "gantt"] as ViewMode[]).map((v) => (
             <button
@@ -968,23 +1019,24 @@ export default function ScheduleModule() {
             ))}
           </div>
         )}
-        <button
-          className="btn btn-ghost"
-          style={{ marginLeft: "auto" }}
-          onClick={() => setCatalogOpen(true)}
-          disabled={!objectId}
-          title={`${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства`}
-        >
-          Из справочника
-        </button>
-        <button
-          className="btn btn-primary"
-          style={{ marginLeft: 0 }}
-          onClick={() => openPanel(null)}
-          disabled={!objectId}
-        >
-          + Добавить этап
-        </button>
+        <div className="toolbar-actions">
+          <button
+            className="btn btn-ghost"
+            onClick={() => setCatalogOpen(true)}
+            disabled={!objectId}
+            title={`${STAGE_TEMPLATES_COUNT} типовых работ агропромышленного строительства`}
+          >
+            Из справочника
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ marginLeft: 0 }}
+            onClick={() => openPanel(null)}
+            disabled={!objectId}
+          >
+            + Добавить этап
+          </button>
+        </div>
       </div>
 
       {view === "tree" && (
@@ -1260,6 +1312,34 @@ export default function ScheduleModule() {
               />
             </div>
           </div>
+          <div className="field">
+            <label>Происхождение работы</label>
+            <select
+              value={form.kind}
+              onChange={(e) => setForm({ ...form, kind: e.target.value as TaskKind })}
+            >
+              <option value="plan">По графику — была в проекте</option>
+              <option value="extra">Непредвиденная — вскрылась по ходу</option>
+            </select>
+          </div>
+          {form.kind === "extra" && (
+            <div className="field">
+              <label>
+                Основание <span className="req">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="напр. вскрыт старый фундамент, письмо заказчика №12"
+                value={form.reason}
+                onChange={(e) => setForm({ ...form, reason: e.target.value })}
+              />
+              <p className="hint">
+                Предписание надзора, допсоглашение, вскрытые условия, переделка. Через полгода
+                при разборе сроков это единственное, что объяснит, откуда взялась работа.
+              </p>
+            </div>
+          )}
+
           <div className="field">
             <label>Как отмечаем выполнение</label>
             <select

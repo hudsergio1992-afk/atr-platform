@@ -26,7 +26,7 @@ import {
   weekEndOf,
   weekLabel,
 } from "@/lib/weekly";
-import { fmtDate, fmtDateTime, fmtDeviation, fmtNum, fmtPercent } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtDeviation, fmtNum, fmtPercent, plural } from "@/lib/format";
 import { readSetting, useToday, writeSetting } from "@/lib/useClient";
 
 const LS_OBJECT_KEY = "atr.weekly.objectId";
@@ -562,6 +562,66 @@ export default function WeeklyModule() {
     setBusy(false);
   }
 
+  /**
+   * Заводит разовую работу недельного задания полноценным этапом графика.
+   * Такие работы вскрываются по ходу стройки, поэтому этап помечается
+   * непредвиденным, а основанием становится неделя, в которую он всплыл.
+   */
+  async function promoteToSchedule(item: WeeklyItem) {
+    if (!objectId || !assignment || item.task_id) return;
+    setBusy(true);
+    const now = new Date().toISOString();
+    const hasVolume = item.volume_plan !== null && Number(item.volume_plan) > 0 && !!item.unit;
+    const rootOrder = tasks
+      .filter((t) => !t.parent_id)
+      .reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0);
+
+    const { data, error } = await supabase
+      .from("schedule_tasks")
+      .insert({
+        object_id: objectId,
+        parent_id: null,
+        sort_order: rootOrder + 10,
+        name: item.name,
+        start_plan: assignment.week_start,
+        end_plan: weekEndOf(assignment.week_start),
+        start_fact: null,
+        end_fact: null,
+        tracking: hasVolume ? "volume" : "percent",
+        kind: "extra",
+        reason: item.note || `Выявлено в недельном задании ${weekLabel(assignment.week_start)}`,
+        volume_total: hasVolume ? Number(item.volume_plan) : null,
+        unit: item.unit,
+        progress_fact: 0,
+        history: [{ at: now, text: `Заведено из недельного задания ${weekLabel(assignment.week_start)}` }],
+        created_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      setBanner(dbErrorText(error, "Не удалось завести работу в график"));
+      setBusy(false);
+      return;
+    }
+
+    const history: HistoryEntry[] = [
+      ...(item.history || []),
+      { at: now, text: "Работа заведена в график как непредвиденная" },
+    ];
+    const { error: linkError } = await supabase
+      .from("weekly_items")
+      .update({ task_id: (data as ScheduleTask).id, history, updated_at: now })
+      .eq("id", item.id);
+    if (linkError) {
+      setBanner(dbErrorText(linkError, "Этап создан, но строка к нему не привязалась"));
+    } else {
+      setBanner("Работа заведена в график как непредвиденная. Проставьте ей плановые сроки.");
+    }
+    await loadWeekData(objectId);
+    setBusy(false);
+  }
+
   function renderDetail(item: WeeklyItem) {
     const d = itemDerived(item);
     const history = (item.history || []).slice().reverse();
@@ -614,6 +674,19 @@ export default function WeeklyModule() {
               >
                 Изменить
               </button>
+              {!item.task_id && (
+                <button
+                  className="btn btn-sm btn-ghost"
+                  disabled={busy}
+                  title="Создаст этап в графике работ с пометкой «непредвиденная»"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    promoteToSchedule(item);
+                  }}
+                >
+                  Завести в график
+                </button>
+              )}
               {pendingDeleteId === item.id ? (
                 <button
                   className="btn btn-sm btn-danger"
@@ -684,7 +757,14 @@ export default function WeeklyModule() {
       <Fragment key={item.id}>
         <div className={`wk-row${detailId === item.id ? " is-open" : ""}`}>
           <div className="wk-c wk-c-name" onClick={() => setDetailId((c) => (c === item.id ? null : item.id))}>
-            <span className="wk-name-text">{item.name}</span>
+            <span className="wk-name-text">
+              {item.name}
+              {!item.task_id && (
+                <span className="tag-extra" title="Работы нет в графике — её можно завести туда">
+                  вне графика
+                </span>
+              )}
+            </span>
             {item.crew && <span className="wk-crew">{item.crew}</span>}
           </div>
           <div className="wk-c wk-c-plan mono">
@@ -822,7 +902,9 @@ export default function WeeklyModule() {
         <div className="stats">
           <div className="stat-total">
             <span className="n">{summary.total}</span>
-            <span className="l">работ в задании</span>
+            <span className="l">
+              {plural(summary.total, "работа в задании", "работы в задании", "работ в задании")}
+            </span>
           </div>
           <div className="chip-row">
             <span className="chip st-good">
