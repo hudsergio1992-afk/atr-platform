@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { dbErrorText } from "@/lib/dbError";
+import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import { HistoryEntry, ScheduleTask } from "@/lib/types";
 import {
   buildImportPlan,
@@ -19,7 +19,8 @@ interface Props {
   objectName: string;
   tasks: ScheduleTask[];
   onClose: () => void;
-  onDone: (message: string) => void;
+  /** schemaMissing — база отстала от приложения, нужна подготовка хранилища. */
+  onDone: (message: string, schemaMissing?: boolean) => void;
 }
 
 /**
@@ -209,7 +210,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
           .insert(payload)
           .select();
         if (insertError) {
-          onDone(dbErrorText(insertError, "Загрузка прервана"));
+          onDone(dbErrorText(insertError, "Загрузка прервана"), needsSchemaSetup(insertError));
           setBusy(false);
           return;
         }
@@ -244,7 +245,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
           .update({ ...patch, history })
           .eq("id", r.existingId as string);
         if (updateError) {
-          onDone(dbErrorText(updateError, "Загрузка прервана"));
+          onDone(dbErrorText(updateError, "Загрузка прервана"), needsSchemaSetup(updateError));
           setBusy(false);
           return;
         }
@@ -257,7 +258,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
       const ids = plan.missing.map((t) => t.id);
       const { error: deleteError } = await supabase.from("schedule_tasks").delete().in("id", ids);
       if (deleteError) {
-        onDone(dbErrorText(deleteError, "Этапы загружены, но лишние не удалились"));
+        onDone(dbErrorText(deleteError, "Этапы загружены, но лишние не удалились"), needsSchemaSetup(deleteError));
         setBusy(false);
         return;
       }

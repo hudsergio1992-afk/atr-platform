@@ -1211,10 +1211,13 @@ export default function ScheduleModule() {
           objectName={currentObject?.name || "объект"}
           tasks={tasks}
           onClose={() => setImportOpen(false)}
-          onDone={async (message) => {
+          onDone={async (message, schemaGap) => {
             setBanner(message);
             setImportOpen(false);
+            // Сначала перечитываем, потом ставим флаг: чтение может пройти успешно
+            // и сбросить его, хотя запись только что упала из-за нехватки поля.
             await loadTasks(objectId);
+            if (schemaGap) setSchemaMissing(true);
           }}
         />
       )}

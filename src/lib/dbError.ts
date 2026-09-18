@@ -45,11 +45,17 @@ export function dbErrorText(error: SupabaseLikeError | null | undefined, action:
   }
   // Колонка есть в приложении, но PostgREST её не видит — чаще всего устаревший кэш схемы.
   if (code === "PGRST204" || /could not find the .* column/i.test(msg)) {
-    return `${action}: хранилище отстало от приложения — не хватает одного из полей.`;
+    const field = /'([^']+)' column/i.exec(msg)?.[1];
+    return `${action}: хранилище отстало от приложения${
+      field ? ` — не хватает поля «${field}»` : ""
+    }. Подготовьте его заново, инструкция ниже.`;
   }
   // Таблица есть, но устарела — нет колонки, которую шлёт приложение.
   if (code === "42703" || /column .* does not exist/i.test(msg)) {
-    return `${action}: хранилище отстало от приложения — не хватает колонки.`;
+    const field = /column "?([\w.]+)"? does not exist/i.exec(msg)?.[1];
+    return `${action}: хранилище отстало от приложения${
+      field ? ` — не хватает поля «${field}»` : ""
+    }. Подготовьте его заново, инструкция ниже.`;
   }
   if (code === "23505") {
     if (/weekly_items_one_row_per_task/.test(msg) || /weekly_items_one_row_per_task/.test(error.details || "")) {
