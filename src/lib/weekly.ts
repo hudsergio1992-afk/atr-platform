@@ -3,6 +3,15 @@ import { clampPercent, dayToISO, parseDay, planProgress, TaskNode } from "@/lib/
 
 const MS_PER_DAY = 86_400_000;
 
+/** Единицы, которые не делятся: «1,924 силоса» — бессмыслица, нужен целый. */
+const WHOLE_UNITS = new Set(["шт", "компл.", "к-т", "шт.", "комплект"]);
+
+/** Округление объёма под его единицу: штучное — вниз до целого, остальное — до грамма. */
+function roundVolume(value: number, unit: string | null): number {
+  if (unit && WHOLE_UNITS.has(unit.trim().toLowerCase())) return Math.floor(value);
+  return Math.round(value * 1000) / 1000;
+}
+
 const MONTHS_GEN = [
   "янв", "фев", "мар", "апр", "мая", "июн",
   "июл", "авг", "сен", "окт", "ноя", "дек",
@@ -118,6 +127,11 @@ export interface DraftItem {
   unit: string | null;
   volume_plan: number | null;
   progress_plan: number | null;
+  /**
+   * Достигнутая готовность этапа на момент выдачи задания. Не «сделано за неделю»,
+   * а отправная точка: прораб видит, откуда двигаться, и правит вверх.
+   */
+  progress_fact: number | null;
   crew: string | null;
   note: string | null;
   sort_order: number;
@@ -169,6 +183,7 @@ export function buildDraft(input: DraftInput): DraftItem[] {
       unit: it.unit,
       volume_plan: hasVolume ? left : null,
       progress_plan: it.progress_plan,
+      progress_fact: node ? node.progressFact : it.progress_fact,
       crew: it.crew,
       note: "Перенос с прошлой недели",
       sort_order: order,
@@ -184,20 +199,28 @@ export function buildDraft(input: DraftInput): DraftItem[] {
     if (overlap === null) continue;
 
     const done = doneByTask.get(n.task.id) || 0;
+    const hasTotal = n.volumeTotal !== null && n.volumeTotal > 0;
     let volumePlan: number | null = null;
-    // Объём на неделю выдаётся только этапам, которые учитываются по объёму:
-    // делить «1 силос» на недельные доли бессмысленно.
-    if (n.tracking === "volume" && n.volumeTotal !== null && n.volumeTotal > 0 && n.durationPlan) {
-      const share = (n.volumeTotal * overlap) / n.durationPlan;
-      const left = Math.max(0, n.volumeTotal - done);
-      volumePlan = Math.round(Math.min(share, left) * 1000) / 1000;
-      if (volumePlan <= 0) continue;
-    }
+    let progressPlan: number | null = null;
 
-    const progressPlan =
-      volumePlan !== null && n.volumeTotal
-        ? progressFromVolume(n.volumeTotal, done + volumePlan)
-        : planProgress(n.startPlan, n.endPlan, weekEnd);
+    if (n.tracking === "volume" && hasTotal && n.durationPlan) {
+      // Долю объёма считаем по дням пересечения, но не больше оставшегося.
+      const share = (n.volumeTotal! * overlap) / n.durationPlan;
+      const left = Math.max(0, n.volumeTotal! - done);
+      volumePlan = roundVolume(Math.min(share, left), n.unit);
+      if (volumePlan <= 0) continue;
+      progressPlan = progressFromVolume(n.volumeTotal, done + volumePlan);
+    } else {
+      // Задание выдаётся процентом. Если объём у этапа всё же задан, переводим
+      // целевой процент в понятные прорабу единицы — не дробя по дням.
+      progressPlan = planProgress(n.startPlan, n.endPlan, weekEnd);
+      if (hasTotal && progressPlan !== null) {
+        const target = (n.volumeTotal! * progressPlan) / 100 - done;
+        const left = Math.max(0, n.volumeTotal! - done);
+        const value = roundVolume(Math.min(Math.max(0, target), left), n.unit);
+        volumePlan = value > 0 ? value : null;
+      }
+    }
 
     order += 10;
     out.push({
@@ -206,6 +229,7 @@ export function buildDraft(input: DraftInput): DraftItem[] {
       unit: n.unit,
       volume_plan: volumePlan,
       progress_plan: progressPlan,
+      progress_fact: n.progressFact > 0 ? n.progressFact : null,
       crew: null,
       note: null,
       sort_order: order,

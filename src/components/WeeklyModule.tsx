@@ -14,7 +14,7 @@ import {
   WeeklyItem,
   WeeklyStatus,
 } from "@/lib/types";
-import { buildTree, clampPercent, flattenTree, TaskNode } from "@/lib/schedule";
+import { buildTree, clampPercent, flattenTree, planProgress, TaskNode } from "@/lib/schedule";
 import {
   buildDraft,
   isoWeekNumber,
@@ -295,7 +295,7 @@ export default function WeeklyModule() {
           volume_plan: d.volume_plan,
           volume_fact: null,
           progress_plan: d.progress_plan,
-          progress_fact: null,
+          progress_fact: d.progress_fact,
           crew: d.crew,
           note: d.note,
           history: [
@@ -486,6 +486,7 @@ export default function WeeklyModule() {
 
   /** Выбор этапа подставляет его название, единицу и остаток объёма. */
   function pickTask(taskId: string) {
+    const f0 = form;
     if (!taskId) {
       setForm((f) => ({ ...f, taskId: "" }));
       return;
@@ -500,12 +501,19 @@ export default function WeeklyModule() {
       node.volumeTotal !== null && node.volumeTotal > 0
         ? Math.max(0, Math.round((node.volumeTotal - done) * 1000) / 1000)
         : null;
+    // Цель недели по проценту: куда этап должен дойти к воскресенью по плановым срокам.
+    const targetPercent =
+      weekStart && !f0.progressPlan
+        ? planProgress(node.startPlan, node.endPlan, weekEndOf(weekStart))
+        : null;
     setForm((f) => ({
       ...f,
       taskId,
       name: f.name.trim() ? f.name : node.task.name,
       unit: node.unit || f.unit,
       volumePlan: left !== null && !f.volumePlan ? String(left) : f.volumePlan,
+      progressPlan:
+        targetPercent !== null && !f.progressPlan ? String(targetPercent) : f.progressPlan,
     }));
   }
 
@@ -682,7 +690,13 @@ export default function WeeklyModule() {
             )}
             <dt>Объём план</dt>
             <dd className="mono">
-              {item.volume_plan != null ? `${fmtNum(item.volume_plan, 3)} ${item.unit || ""}`.trim() : "—"}
+              {item.volume_plan != null ? (
+                `${fmtNum(item.volume_plan, 3)} ${item.unit || ""}`.trim()
+              ) : node && (node.volumeTotal === null || node.volumeTotal <= 0) ? (
+                <span className="dev-words">у этапа не задан объём — отмечайте процентом</span>
+              ) : (
+                "—"
+              )}
             </dd>
             <dt>Объём факт</dt>
             <dd className="mono">
