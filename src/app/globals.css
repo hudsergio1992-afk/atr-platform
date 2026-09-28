@@ -1,13 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-    --bg: #f5f1e8;
+    --bg: #f3f5f3;
     --surface: #ffffff;
-    --surface-2: #ebe4d3;
-    --surface-3: #e2d9c2;
-    --border: #d9cfb8;
-    --ink: #262220;
-    --muted: #756b5a;
+    --surface-2: #eaede9;
+    --surface-3: #dee3de;
+    --border: #d1d7d1;
+    --ink: #1e231f;
+    --muted: #626b63;
     --accent: #0b5d3f;
     --accent-hover: #0e7350;
     --accent-ink: #f7f3e8;
@@ -17,9 +17,9 @@
     --st-warn-ink: #8f5c0d;
     --st-bad-bg: #fbe4e1;
     --st-bad-ink: #93281d;
-    --st-neutral-bg: #e7e4de;
-    --st-neutral-ink: #4c473c;
-    --shadow: 0 8px 24px -12px rgb(38 34 32 / 0.35);
+    --st-neutral-bg: #e6e9e6;
+    --st-neutral-ink: #464e47;
+    --shadow: 0 8px 24px -12px rgb(24 28 25 / 0.35);
 }
 
 @media (prefers-color-scheme: dark) {
