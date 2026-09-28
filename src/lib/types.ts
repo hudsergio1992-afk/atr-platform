@@ -199,7 +199,39 @@ export const WEEKLY_STATUS_CLASS: Record<WeeklyStatus, string> = {
   closed: "st-good",
 };
 
+/* ---------- Модуль 4 (минимум): Приёмка этапов ---------- */
+
+/** draft — черновик, review — на согласовании, signed — подписан заказчиком. */
+export type AcceptanceStatus = "draft" | "review" | "signed";
+
+/** Акт приёмки одного этапа графика. Полноценные ПТО и ИД — фаза 2. */
+export interface AcceptanceAct {
+  id: string;
+  task_id: string;
+  object_id: string;
+  status: AcceptanceStatus;
+  act_number: string | null;
+  act_date: string | null;
+  amount: number | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+export const ACCEPTANCE_STATUS_LABEL: Record<AcceptanceStatus, string> = {
+  draft: "Черновик",
+  review: "На согласовании",
+  signed: "Подписан",
+};
+
+export const ACCEPTANCE_STATUS_CLASS: Record<AcceptanceStatus, string> = {
+  draft: "st-neutral",
+  review: "st-warn",
+  signed: "st-good",
+};
+
 export const MODULES = [
+  { key: "dashboard", label: "Дашборд", href: "/dashboard", ready: true },
   { key: "objects", label: "Объекты", href: "/objects", ready: true },
   { key: "schedule", label: "График работ", href: "/schedule", ready: true },
   { key: "weekly", label: "Недельные задания", href: "/weekly", ready: true },
