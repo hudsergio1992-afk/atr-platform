@@ -60,6 +60,9 @@ export default function PortfolioHealth() {
   const [acceptForm, setAcceptForm] = useState<AcceptForm>(EMPTY_ACCEPT_FORM);
   const [acceptBusy, setAcceptBusy] = useState(false);
 
+  /** "" — показывать портфель целиком; иначе id объекта, на котором развёрнута сводка. */
+  const [selectedObjectId, setSelectedObjectId] = useState<string>("");
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setBanner(null);
@@ -162,12 +165,19 @@ export default function PortfolioHealth() {
     );
   }, [objects, tasksByObject, weekItemsByObject, actsByObject, today]);
 
-  const topRisks = useMemo(() => computeTopRisks(healths), [healths]);
+  /** Карта здоровья и топ риска — либо весь портфель, либо один выбранный объект. */
+  const visibleHealths = useMemo(
+    () => (selectedObjectId ? healths.filter((h) => h.object.id === selectedObjectId) : healths),
+    [healths, selectedObjectId]
+  );
+
+  const topRisks = useMemo(() => computeTopRisks(visibleHealths), [visibleHealths]);
 
   const curve: CurvePoint[] = useMemo(() => {
     if (!today) return [];
-    return computeProductionCurve(objects, tasksByObject, actsByObject, today);
-  }, [objects, tasksByObject, actsByObject, today]);
+    const objs = selectedObjectId ? objects.filter((o) => o.id === selectedObjectId) : objects;
+    return computeProductionCurve(objs, tasksByObject, actsByObject, today);
+  }, [objects, tasksByObject, actsByObject, today, selectedObjectId]);
 
   const riskCounts = useMemo(() => {
     const c = { critical: 0, warning: 0, ok: 0 };
@@ -188,6 +198,16 @@ export default function PortfolioHealth() {
     });
     return out.sort((a, b) => (b.daysWaiting ?? -1) - (a.daysWaiting ?? -1));
   }, [healths]);
+
+  const visiblePendingFlat = useMemo(
+    () => (selectedObjectId ? pendingFlat.filter((p) => p.objectId === selectedObjectId) : pendingFlat),
+    [pendingFlat, selectedObjectId]
+  );
+
+  const selectedObject = useMemo(
+    () => objects.find((o) => o.id === selectedObjectId) || null,
+    [objects, selectedObjectId]
+  );
 
   const actsByTaskId = useMemo(() => {
     const m = new Map<string, AcceptanceAct>();
@@ -299,6 +319,26 @@ export default function PortfolioHealth() {
       {banner && <div className="banner show">{banner}</div>}
       {schemaMissing && <SchemaSetup onRecheck={loadAll} />}
 
+      {objects.length > 0 && (
+        <div className="obj-picker">
+          <label htmlFor="dash-object">Объект</label>
+          <select
+            id="dash-object"
+            className="filter"
+            value={selectedObjectId}
+            onChange={(e) => setSelectedObjectId(e.target.value)}
+          >
+            <option value="">Все объекты</option>
+            {objects.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          {selectedObject && <span className="obj-picker-meta">{selectedObject.address}</span>}
+        </div>
+      )}
+
       <div className="stats">
         <div className="stat-total">
           <span className="n">{objects.length}</span>
@@ -323,7 +363,7 @@ export default function PortfolioHealth() {
       </div>
 
       <section className="section-block">
-        <h3 className="section-title">Топ причин риска</h3>
+        <h3 className="section-title">{selectedObject ? "Причины риска" : "Топ причин риска"}</h3>
         {topRisks.length === 0 ? (
           <p className="hint">Системных причин отставания не выявлено.</p>
         ) : (
@@ -344,7 +384,7 @@ export default function PortfolioHealth() {
       </section>
 
       <section className="section-block">
-        <h3 className="section-title">Карта здоровья объектов</h3>
+        <h3 className="section-title">{selectedObject ? `Здоровье объекта: ${selectedObject.name}` : "Карта здоровья объектов"}</h3>
         {!objects.length ? (
           <p className="empty-state">Объектов пока нет — заведите первый в разделе «Объекты».</p>
         ) : (
@@ -363,7 +403,7 @@ export default function PortfolioHealth() {
                   </tr>
                 </thead>
                 <tbody>
-                  {healths.map((h) => (
+                  {visibleHealths.map((h) => (
                     <tr key={h.object.id} className="obj-row">
                       <td className="name-cell">{h.object.name}</td>
                       <td>
@@ -395,7 +435,7 @@ export default function PortfolioHealth() {
             </div>
 
             <div className="cards">
-              {healths.map((h) => (
+              {visibleHealths.map((h) => (
                 <div className="obj-card" key={h.object.id}>
                   <div className="row1">
                     <div>
@@ -424,17 +464,17 @@ export default function PortfolioHealth() {
       <section className="section-block">
         <h3 className="section-title">
           Очередь приёмки{" "}
-          {pendingFlat.length > 0 && (
+          {visiblePendingFlat.length > 0 && (
             <span className="chip st-neutral">
-              <span className="n">{pendingFlat.length}</span>
+              <span className="n">{visiblePendingFlat.length}</span>
             </span>
           )}
         </h3>
-        {pendingFlat.length === 0 ? (
+        {visiblePendingFlat.length === 0 ? (
           <p className="hint">Готовых этапов без подписанного акта нет.</p>
         ) : (
           <ul className="accept-list">
-            {pendingFlat.map((p) => {
+            {visiblePendingFlat.map((p) => {
               const overdue = (p.daysWaiting ?? 0) >= ACCEPTANCE_OVERDUE_DAYS;
               const isOpen = openAcceptTaskId === p.task.task.id;
               return (
@@ -520,7 +560,9 @@ export default function PortfolioHealth() {
       </section>
 
       <section className="section-block">
-        <h3 className="section-title">Выработка: план / факт / в актах</h3>
+        <h3 className="section-title">
+          Выработка: план / факт / в актах{selectedObject ? ` — ${selectedObject.name}` : ""}
+        </h3>
         {curve.length === 0 ? (
           <p className="hint">Недостаточно данных — нужны сроки и стоимости этапов графика.</p>
         ) : (
