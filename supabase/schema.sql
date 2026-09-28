@@ -182,6 +182,31 @@ create unique index if not exists weekly_items_one_row_per_task
   on public.weekly_items (assignment_id, task_id)
   where task_id is not null;
 
+-- ── Модуль 4 (минимум): Приёмка этапов ───────────────────────────────────────
+-- Полноценные ПТО и ИД (журналы работ, сертификаты) — фаза 2. Здесь — только
+-- то, что нужно дашборду портфеля: подтверждён ли актом физически готовый
+-- этап, иначе его стоимость «зависает» — освоена на площадке, но не принята.
+create table if not exists public.acceptance_acts (
+  id          uuid primary key default gen_random_uuid(),
+  task_id     uuid        not null references public.schedule_tasks (id) on delete cascade,
+  object_id   uuid        not null references public.objects (id) on delete cascade,
+  status      text        not null default 'draft'
+              check (status in ('draft', 'review', 'signed')),
+  act_number  text,
+  act_date    date,
+  -- Принятая актом сумма, ₽. По умолчанию равна стоимости этапа, но может
+  -- отличаться — заказчик иногда подписывает не всю сумму сразу.
+  amount      numeric(14, 2) check (amount is null or amount >= 0),
+  history     jsonb       not null default '[]'::jsonb,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- Один этап — один акт: повторное открытие приёмки правит существующую запись,
+-- а не плодит вторую на ту же работу.
+create unique index if not exists acceptance_acts_task_idx on public.acceptance_acts (task_id);
+create index if not exists acceptance_acts_object_idx on public.acceptance_acts (object_id, status);
+
 -- ── Доступ ───────────────────────────────────────────────────────────────────
 -- MVP работает без аутентификации: анонимный ключ имеет полный доступ.
 -- Заменить на политики по ролям в модуле 8 «Роли и доступ».
@@ -190,6 +215,7 @@ alter table public.schedule_tasks     enable row level security;
 alter table public.weekly_assignments enable row level security;
 alter table public.weekly_items       enable row level security;
 alter table public.stage_catalog      enable row level security;
+alter table public.acceptance_acts    enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
 create policy objects_anon_all on public.objects
@@ -209,4 +235,8 @@ create policy weekly_items_anon_all on public.weekly_items
 
 drop policy if exists stage_catalog_anon_all on public.stage_catalog;
 create policy stage_catalog_anon_all on public.stage_catalog
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists acceptance_acts_anon_all on public.acceptance_acts;
+create policy acceptance_acts_anon_all on public.acceptance_acts
   for all to anon, authenticated using (true) with check (true);
