@@ -667,6 +667,43 @@ tr.detail-row td { padding: 0; }
 .calc-box .hint { margin-top: 8px; }
 .field input:disabled, .field select:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* ---- Дашборд портфеля ---- */
+.section-block { padding: 22px 0 4px; }
+.section-title { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.risk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.risk-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+}
+.risk-text { min-width: 0; }
+.risk-headline { font-weight: 600; font-size: 13.5px; }
+.risk-objects { color: var(--muted); font-size: 12px; margin-top: 3px; }
+td.risk-reasons { color: var(--muted); font-size: 12.5px; max-width: 260px; }
+
+.accept-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.accept-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.accept-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 12px 14px; cursor: pointer;
+}
+.accept-row:hover { background: var(--surface-2); }
+.accept-main { min-width: 0; }
+.accept-name { font-weight: 600; font-size: 13.5px; }
+.accept-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.accept-meta { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.accept-form { padding: 4px 14px 16px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 10px; }
+.accept-actions { display: flex; gap: 8px; }
+.accept-actions .btn:first-child { margin-right: auto; }
+
+.curve-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+}
+.curve-svg { width: 100%; height: 220px; display: block; }
+.curve-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.curve-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.curve-legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+.curve-foot { margin-top: 10px; }
+
 @media (max-width: 860px) {
     .sch-head, .sch-row, .sch-detail-row { min-width: 0; }
     .sch-head {
