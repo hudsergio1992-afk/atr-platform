@@ -14,6 +14,8 @@ import {
   HistoryEntry,
   MaterialCertificate,
   ScheduleTask,
+  SupplyRequest,
+  SUPPLY_STATUS_LABEL,
   WorkLogEntry,
 } from "@/lib/types";
 import { buildTree, flattenTree, parseDay, TaskNode } from "@/lib/schedule";
@@ -101,6 +103,7 @@ interface CertForm {
   docNumber: string;
   docDate: string;
   supplier: string;
+  deliveryId: string;
 }
 
 const EMPTY_CERT_FORM: CertForm = {
@@ -109,6 +112,7 @@ const EMPTY_CERT_FORM: CertForm = {
   docNumber: "",
   docDate: "",
   supplier: "",
+  deliveryId: "",
 };
 
 const CERT_FIELD_LABEL: Record<keyof CertForm, string> = {
@@ -117,6 +121,7 @@ const CERT_FIELD_LABEL: Record<keyof CertForm, string> = {
   docNumber: "№ документа",
   docDate: "Дата документа",
   supplier: "Поставщик",
+  deliveryId: "Поставка",
 };
 
 function certToForm(c: MaterialCertificate | null): CertForm {
@@ -127,6 +132,7 @@ function certToForm(c: MaterialCertificate | null): CertForm {
     docNumber: c.doc_number || "",
     docDate: c.doc_date || "",
     supplier: c.supplier || "",
+    deliveryId: c.delivery_id || "",
   };
 }
 
@@ -145,6 +151,8 @@ export default function PtoModule() {
   const [acts, setActs] = useState<AcceptanceAct[]>([]);
   const [logs, setLogs] = useState<WorkLogEntry[]>([]);
   const [certs, setCerts] = useState<MaterialCertificate[]>([]);
+  /** Заявки снабжения объекта — к ним привязываются сертификаты как к поставкам. */
+  const [deliveries, setDeliveries] = useState<SupplyRequest[]>([]);
 
   // ---- акты ----
   const [openActTaskId, setOpenActTaskId] = useState<string | null>(null);
@@ -192,14 +200,16 @@ export default function PtoModule() {
       setActs([]);
       setLogs([]);
       setCerts([]);
+      setDeliveries([]);
       return;
     }
     setLoadingData(true);
-    const [taskRes, actRes, logRes, certRes] = await Promise.all([
+    const [taskRes, actRes, logRes, certRes, supRes] = await Promise.all([
       supabase.from("schedule_tasks").select("*").eq("object_id", id).order("sort_order"),
       supabase.from("acceptance_acts").select("*").eq("object_id", id),
       supabase.from("work_log_entries").select("*").eq("object_id", id).order("entry_date", { ascending: false }),
       supabase.from("material_certificates").select("*").eq("object_id", id).order("created_at", { ascending: false }),
+      supabase.from("supply_requests").select("*").eq("object_id", id).order("created_at", { ascending: false }),
     ]);
     const missing =
       needsSchemaSetup(taskRes.error) ||
@@ -216,6 +226,8 @@ export default function PtoModule() {
     setActs((actRes.data as AcceptanceAct[]) || []);
     setLogs((logRes.data as WorkLogEntry[]) || []);
     setCerts((certRes.data as MaterialCertificate[]) || []);
+    // Снабжение — необязательная связь: без его таблиц реестр сертификатов работает сам по себе.
+    setDeliveries(supRes.error ? [] : (supRes.data as SupplyRequest[]) || []);
     setLoadingData(false);
   }, []);
 
@@ -465,6 +477,24 @@ export default function PtoModule() {
     [certs]
   );
 
+  function deliveryLabel(id: string | null): string {
+    if (!id) return "не привязана";
+    const d = deliveries.find((x) => x.id === id);
+    if (!d) return "заявка удалена";
+    const when = d.delivery_fact ? `получено ${fmtDate(d.delivery_fact)}` : SUPPLY_STATUS_LABEL[d.status].toLowerCase();
+    return `${d.material_name} — ${when}`;
+  }
+
+  /** Выбор поставки подставляет материал, если он ещё не вписан. */
+  function pickDelivery(id: string) {
+    const d = deliveries.find((x) => x.id === id);
+    setCertForm((f) => ({
+      ...f,
+      deliveryId: id,
+      materialName: f.materialName.trim() || d?.material_name || "",
+    }));
+  }
+
   function openCertPanel(id: string | null) {
     setEditingCertId(id);
     const c = id ? certs.find((x) => x.id === id) || null : null;
@@ -487,6 +517,7 @@ export default function PtoModule() {
         if (!v) return "—";
         if (k === "docType") return CERT_DOC_TYPE_LABEL[v as CertDocType] || v;
         if (k === "docDate") return fmtDate(v) === "—" ? v : fmtDate(v);
+        if (k === "deliveryId") return deliveryLabel(v);
         return v;
       };
       parts.push(`${CERT_FIELD_LABEL[k]}: ${disp(ov)} → ${disp(nv)}`);
@@ -509,6 +540,7 @@ export default function PtoModule() {
       doc_number: certForm.docNumber.trim() || null,
       doc_date: certForm.docDate || null,
       supplier: certForm.supplier.trim() || null,
+      delivery_id: certForm.deliveryId || null,
       updated_at: now,
     };
 
@@ -525,7 +557,7 @@ export default function PtoModule() {
     } else {
       const { error } = await supabase
         .from("material_certificates")
-        .insert({ ...payload, delivery_id: null, created_at: now, history: [{ at: now, text: "Документ добавлен в реестр" }] });
+        .insert({ ...payload, created_at: now, history: [{ at: now, text: "Документ добавлен в реестр" }] });
       if (error) setBanner(dbErrorText(error, "Не удалось добавить документ"));
       else {
         closeCertPanel();
@@ -640,6 +672,7 @@ export default function PtoModule() {
           setPendingDeleteId={setCertPendingDeleteId}
           onEdit={openCertPanel}
           onDelete={deleteCert}
+          deliveryLabel={deliveryLabel}
         />
       )}
 
@@ -774,10 +807,23 @@ export default function PtoModule() {
               onChange={(e) => setCertForm({ ...certForm, supplier: e.target.value })}
             />
           </div>
-          <p className="hint">
-            Привязка к поставке появится, когда будет готов модуль «Снабжение» — пока документ
-            хранится сам по себе.
-          </p>
+          <div className="field">
+            <label>Поставка (заявка снабжения)</label>
+            <select value={certForm.deliveryId} onChange={(e) => pickDelivery(e.target.value)}>
+              <option value="">— не привязана —</option>
+              {deliveries
+                .filter((d) => d.status !== "cancelled")
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {deliveryLabel(d.id)}
+                  </option>
+                ))}
+            </select>
+            <p className="hint">
+              Показаны заявки модуля «Снабжение» по этому объекту. Выбор подставит наименование
+              материала, если оно ещё не вписано.
+            </p>
+          </div>
         </div>
         <div className="panel-foot">
           <button className="btn btn-ghost" onClick={closeCertPanel}>
@@ -1150,6 +1196,7 @@ function CertsView({
   setPendingDeleteId,
   onEdit,
   onDelete,
+  deliveryLabel,
 }: {
   items: MaterialCertificate[];
   detailId: string | null;
@@ -1158,6 +1205,7 @@ function CertsView({
   setPendingDeleteId: (id: string | null) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  deliveryLabel: (id: string | null) => string;
 }) {
   function renderDetail(c: MaterialCertificate) {
     const history = (c.history || []).slice().reverse();
@@ -1177,7 +1225,7 @@ function CertsView({
             <dt>Поставщик</dt>
             <dd>{c.supplier || "—"}</dd>
             <dt>Поставка</dt>
-            <dd>{c.delivery_id ? c.delivery_id : "не привязана"}</dd>
+            <dd>{deliveryLabel(c.delivery_id)}</dd>
           </dl>
           <div className="detail-actions">
             <button
@@ -1258,7 +1306,7 @@ function CertsView({
                   <td className="mono">{c.doc_number || "—"}</td>
                   <td className="mono">{fmtDate(c.doc_date)}</td>
                   <td>{c.supplier || "—"}</td>
-                  <td title="Появится с модулем «Снабжение»">{c.delivery_id ? c.delivery_id : "—"}</td>
+                  <td className="addr-cell">{c.delivery_id ? deliveryLabel(c.delivery_id) : "—"}</td>
                 </tr>
                 {detailId === c.id && (
                   <tr className="detail-row">
