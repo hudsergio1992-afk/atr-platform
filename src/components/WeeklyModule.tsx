@@ -43,10 +43,11 @@ import {
   fmtRange,
   plural,
 } from "@/lib/format";
-import { readSetting, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 
-const LS_OBJECT_KEY = "atr.weekly.objectId";
+/** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
+const LS_OBJECT_KEY = OBJECT_KEY;
 
 interface FormState {
   taskId: string;
