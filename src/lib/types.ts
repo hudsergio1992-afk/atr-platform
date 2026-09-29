@@ -361,7 +361,7 @@ export const MODULES = [
   { key: "pto", label: "ПТО и ИД", href: "/pto", ready: true },
   { key: "supply", label: "Снабжение", href: "/supply", ready: true },
   { key: "budget", label: "Сметы и бюджет", href: "/budget", ready: true },
-  { key: "control", label: "Контроль стройки", href: "#", ready: false },
+  { key: "control", label: "Контроль стройки", href: "/control", ready: true },
   { key: "roles", label: "Роли и доступ", href: "#", ready: false },
 ] as const;
 
@@ -408,6 +408,62 @@ export interface CustomerPayment {
   amount: number;
   document: string | null;
   note: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+/* ---------- Модуль 7: Контроль стройки ---------- */
+
+/** Бакет Supabase Storage с фотоотчётами — публичный, как обычные таблицы по RLS. */
+export const PHOTO_BUCKET = "site-photos";
+
+/** Путь файла в бакете; URL строится на лету через getPublicUrl, не хранится. */
+export interface PhotoRef {
+  path: string;
+  name: string;
+}
+
+/** Фотоотчёт по объекту: одно или несколько фото за дату, привязка к этапу. */
+export interface PhotoReport {
+  id: string;
+  object_id: string;
+  task_id: string | null;
+  report_date: string;
+  /** % выполненного объёма «по фото» — сверяется с фактом графика, туда не пишется. */
+  progress_percent: number | null;
+  comment: string | null;
+  photos: PhotoRef[];
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** open — открыто, in_progress — в работе, resolved — устранено. */
+export type IssueStatus = "open" | "in_progress" | "resolved";
+
+export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
+  open: "Открыто",
+  in_progress: "В работе",
+  resolved: "Устранено",
+};
+
+export const ISSUE_STATUS_CLASS: Record<IssueStatus, string> = {
+  open: "st-bad",
+  in_progress: "st-warn",
+  resolved: "st-good",
+};
+
+/** Запись журнала замечаний по объекту. */
+export interface SiteIssue {
+  id: string;
+  object_id: string;
+  task_id: string | null;
+  description: string;
+  responsible: string | null;
+  due_date: string | null;
+  status: IssueStatus;
+  resolved_at: string | null;
   history: HistoryEntry[];
   created_at: string;
   updated_at: string;
