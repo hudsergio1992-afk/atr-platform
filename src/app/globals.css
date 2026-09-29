@@ -843,3 +843,7 @@ td.risk-reasons { color: var(--muted); font-size: 12.5px; max-width: 260px; }
 .late-list-title { color: var(--ink); font-weight: 600; }
 .late-item { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .late-item .is-neg { color: var(--st-bad-ink); font-weight: 600; }
+
+/* ---- Итоги «факт − план» под статьями бюджета ---- */
+.bud-total-row td { background: var(--surface-2); font-weight: 600; border-top: 1px solid var(--border); }
+.bud-total-row.is-net td { border-top: 2px solid var(--ink); }
