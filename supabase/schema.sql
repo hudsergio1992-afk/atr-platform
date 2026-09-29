@@ -23,16 +23,11 @@ create table if not exists public.objects (
 );
 
 -- ── Модуль 2: График работ ───────────────────────────────────────────────────
--- Иерархия этапов — через parent_id. Длительность, % плана, отклонение и статус
--- НЕ хранятся: это производные, считаются в src/lib/schedule.ts.
 create table if not exists public.schedule_tasks (
   id            uuid primary key default gen_random_uuid(),
   object_id     uuid        not null references public.objects (id) on delete cascade,
   parent_id     uuid        references public.schedule_tasks (id) on delete cascade,
   sort_order    integer     not null default 0,
-  -- Шифр этапа из ГПР: «1», «1.1», «1.1.2». Задаёт иерархию при загрузке файлом
-  -- и служит постоянным ключом — повторная загрузка правленого ГПР обновляет
-  -- существующие этапы, а не плодит копии.
   code          text,
   name          text        not null,
   start_plan    date,
@@ -41,39 +36,23 @@ create table if not exists public.schedule_tasks (
   end_fact      date,
   progress_fact numeric(5, 2)  not null default 0
                 check (progress_fact >= 0 and progress_fact <= 100),
-  -- Способ учёта выполнения: 'volume' — набранным натуральным объёмом,
-  -- 'percent' — процентом готовности (штучные, но длительные работы: сборка
-  -- силоса, монтаж нории, пусконаладка).
   tracking      text        not null default 'percent'
                 check (tracking in ('volume', 'percent')),
-  -- Откуда работа взялась: 'plan' — была в первоначальном графике,
-  -- 'extra' — вскрылась по ходу стройки (предписание, допсоглашение, переделка).
   kind          text        not null default 'plan'
                 check (kind in ('plan', 'extra')),
-  -- Основание непредвиденной работы.
   reason        text,
-  -- Натуральный объём работы и его единица измерения: от них считаются
-  -- недельные задания (модуль «Недельные задания»).
   volume_total  numeric(14, 3) check (volume_total is null or volume_total >= 0),
   unit          text,
-  -- Стоимость этапа целиком, в рублях. Единственная денежная величина, которая
-  -- хранится: цена за единицу и освоение считаются от неё и объёма,
-  -- иначе три числа разъезжаются между собой.
   cost_total    numeric(14, 2) check (cost_total is null or cost_total >= 0),
   history       jsonb       not null default '[]'::jsonb,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
 
--- Для баз, созданных до появления натуральных объёмов.
 alter table public.schedule_tasks add column if not exists volume_total numeric(14, 3);
 alter table public.schedule_tasks add column if not exists unit text;
--- Стоимость этапа.
 alter table public.schedule_tasks add column if not exists cost_total numeric(14, 2);
--- Нормочасы из платформы убраны: трудозатраты здесь не ведутся.
 alter table public.schedule_tasks drop column if exists norm_hours;
--- Способ учёта выполнения. Этапы, заведённые до его появления, считаются
--- учитываемыми по объёму, если объём у них был указан.
 alter table public.schedule_tasks
   add column if not exists tracking text not null default 'percent';
 do $$
@@ -88,7 +67,6 @@ end $$;
 update public.schedule_tasks set tracking = 'volume'
   where volume_total is not null and volume_total > 0 and tracking = 'percent';
 
--- Признак непредвиденной работы и её основание.
 alter table public.schedule_tasks
   add column if not exists kind text not null default 'plan';
 alter table public.schedule_tasks add column if not exists reason text;
@@ -109,9 +87,6 @@ create index if not exists schedule_tasks_object_idx on public.schedule_tasks (o
 create index if not exists schedule_tasks_parent_idx on public.schedule_tasks (parent_id);
 
 -- ── Свой справочник работ ────────────────────────────────────────────────────
--- Типовые работы зашиты в коде (src/lib/stages.ts), но стройка всегда шире
--- справочника. Работу, которой там не нашлось, прораб сохраняет отсюда — и она
--- появляется в справочнике у всех, а не только на его телефоне.
 create table if not exists public.stage_catalog (
   id         uuid primary key default gen_random_uuid(),
   section    text        not null,
@@ -122,13 +97,10 @@ create table if not exists public.stage_catalog (
   created_at timestamptz not null default now()
 );
 
--- Одна работа — одна запись: повторное сохранение того же наименования
--- в том же разделе не плодит копии.
 create unique index if not exists stage_catalog_name_idx
   on public.stage_catalog (lower(section), lower(name));
 
 -- ── Модуль 3: Недельные задания (СНЗ) ────────────────────────────────────────
--- Задание — это неделя по одному объекту. week_start всегда понедельник.
 create table if not exists public.weekly_assignments (
   id         uuid primary key default gen_random_uuid(),
   object_id  uuid        not null references public.objects (id) on delete cascade,
@@ -141,8 +113,6 @@ create table if not exists public.weekly_assignments (
   unique (object_id, week_start)
 );
 
--- Строка задания. task_id необязателен: на стройке попадаются работы,
--- которых в графике нет, и терять их нельзя.
 create table if not exists public.weekly_items (
   id            uuid primary key default gen_random_uuid(),
   assignment_id uuid        not null references public.weekly_assignments (id) on delete cascade,
@@ -165,10 +135,6 @@ create index if not exists weekly_assignments_object_idx on public.weekly_assign
 create index if not exists weekly_items_assignment_idx on public.weekly_items (assignment_id, sort_order);
 create index if not exists weekly_items_task_idx on public.weekly_items (task_id);
 
--- Одна работа графика — одна строка в задании недели. Две строки по одному этапу
--- означали бы два разных факта по одной работе, и было бы неясно, какой верен.
--- Если дубли успели появиться, лишним строкам снимается привязка к этапу:
--- сами строки остаются (труд прораба не теряется), но становятся работами вне графика.
 update public.weekly_items wi set task_id = null
 where wi.task_id is not null
   and exists (
@@ -183,9 +149,6 @@ create unique index if not exists weekly_items_one_row_per_task
   where task_id is not null;
 
 -- ── Модуль 4 (минимум): Приёмка этапов ───────────────────────────────────────
--- Полноценные ПТО и ИД (журналы работ, сертификаты) — фаза 2. Здесь — только
--- то, что нужно дашборду портфеля: подтверждён ли актом физически готовый
--- этап, иначе его стоимость «зависает» — освоена на площадке, но не принята.
 create table if not exists public.acceptance_acts (
   id          uuid primary key default gen_random_uuid(),
   task_id     uuid        not null references public.schedule_tasks (id) on delete cascade,
@@ -194,28 +157,60 @@ create table if not exists public.acceptance_acts (
               check (status in ('draft', 'review', 'signed')),
   act_number  text,
   act_date    date,
-  -- Принятая актом сумма, ₽. По умолчанию равна стоимости этапа, но может
-  -- отличаться — заказчик иногда подписывает не всю сумму сразу.
   amount      numeric(14, 2) check (amount is null or amount >= 0),
   history     jsonb       not null default '[]'::jsonb,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 
--- Один этап — один акт: повторное открытие приёмки правит существующую запись,
--- а не плодит вторую на ту же работу.
 create unique index if not exists acceptance_acts_task_idx on public.acceptance_acts (task_id);
 create index if not exists acceptance_acts_object_idx on public.acceptance_acts (object_id, status);
 
+-- ── Модуль 4: ПТО и исполнительная документация ─────────────────────────────
+alter table public.acceptance_acts add column if not exists description text;
+alter table public.acceptance_acts add column if not exists responsible text;
+
+create table if not exists public.work_log_entries (
+  id         uuid primary key default gen_random_uuid(),
+  object_id  uuid        not null references public.objects (id) on delete cascade,
+  task_id    uuid        references public.schedule_tasks (id) on delete set null,
+  entry_date date        not null,
+  weather    text,
+  crew       text,
+  content    text        not null,
+  history    jsonb       not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists work_log_entries_object_idx on public.work_log_entries (object_id, entry_date desc);
+create index if not exists work_log_entries_task_idx on public.work_log_entries (task_id);
+
+create table if not exists public.material_certificates (
+  id            uuid primary key default gen_random_uuid(),
+  object_id     uuid        not null references public.objects (id) on delete cascade,
+  material_name text        not null,
+  doc_type      text        not null default 'certificate'
+                check (doc_type in ('certificate', 'passport', 'other')),
+  doc_number    text,
+  doc_date      date,
+  supplier      text,
+  delivery_id   uuid,
+  history       jsonb       not null default '[]'::jsonb,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists material_certificates_object_idx on public.material_certificates (object_id);
+create index if not exists material_certificates_delivery_idx on public.material_certificates (delivery_id);
+
 -- ── Доступ ───────────────────────────────────────────────────────────────────
--- MVP работает без аутентификации: анонимный ключ имеет полный доступ.
--- Заменить на политики по ролям в модуле 8 «Роли и доступ».
 alter table public.objects            enable row level security;
 alter table public.schedule_tasks     enable row level security;
 alter table public.weekly_assignments enable row level security;
 alter table public.weekly_items       enable row level security;
 alter table public.stage_catalog      enable row level security;
 alter table public.acceptance_acts    enable row level security;
+alter table public.work_log_entries       enable row level security;
+alter table public.material_certificates  enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
 create policy objects_anon_all on public.objects
@@ -239,4 +234,12 @@ create policy stage_catalog_anon_all on public.stage_catalog
 
 drop policy if exists acceptance_acts_anon_all on public.acceptance_acts;
 create policy acceptance_acts_anon_all on public.acceptance_acts
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists work_log_entries_anon_all on public.work_log_entries;
+create policy work_log_entries_anon_all on public.work_log_entries
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists material_certificates_anon_all on public.material_certificates;
+create policy material_certificates_anon_all on public.material_certificates
   for all to anon, authenticated using (true) with check (true);
