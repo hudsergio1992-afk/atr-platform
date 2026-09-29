@@ -274,13 +274,92 @@ export interface MaterialCertificate {
   updated_at: string;
 }
 
+/* ---------- Модуль 5: Снабжение ---------- */
+
+export type SupplyStatus = "draft" | "pricing" | "approved" | "ordered" | "delivered" | "cancelled";
+
+export const SUPPLY_STATUS_LABEL: Record<SupplyStatus, string> = {
+  draft: "Заявка",
+  pricing: "Сбор предложений",
+  approved: "Согласовано",
+  ordered: "Заказано",
+  delivered: "Доставлено",
+  cancelled: "Отменено",
+};
+
+export const SUPPLY_STATUS_CLASS: Record<SupplyStatus, string> = {
+  draft: "st-neutral",
+  pricing: "st-warn",
+  approved: "st-warn",
+  ordered: "st-warn",
+  delivered: "st-good",
+  cancelled: "st-bad",
+};
+
+/** Поставщик из общей базы. «% поставок в срок» — производный, не хранится. */
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  /** Субъективная оценка снабженца, 0…5. */
+  rating: number | null;
+  payment_terms: string | null;
+  note: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Заявка на материал — один жизненный цикл: заявка → сбор предложений →
+ * согласование → заказ → доставка. supplier_id и поля заказа/доставки
+ * заполняются по мере продвижения статуса.
+ */
+export interface SupplyRequest {
+  id: string;
+  object_id: string;
+  task_id: string | null;
+  material_name: string;
+  quantity: number | null;
+  unit: string | null;
+  needed_by: string | null;
+  status: SupplyStatus;
+  supplier_id: string | null;
+  order_amount: number | null;
+  order_date: string | null;
+  delivery_due: string | null;
+  delivery_fact: string | null;
+  note: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Предложение (цена) от поставщика по заявке. supplier_id необязателен —
+ * цену часто присылают от контакта, которого в справочнике ещё нет.
+ */
+export interface SupplyOffer {
+  id: string;
+  request_id: string;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  price: number | null;
+  note: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
 export const MODULES = [
   { key: "dashboard", label: "Дашборд", href: "/dashboard", ready: true },
   { key: "objects", label: "Объекты", href: "/objects", ready: true },
   { key: "schedule", label: "График работ", href: "/schedule", ready: true },
   { key: "weekly", label: "Недельные задания", href: "/weekly", ready: true },
   { key: "pto", label: "ПТО и ИД", href: "/pto", ready: true },
-  { key: "supply", label: "Снабжение", href: "#", ready: false },
+  { key: "supply", label: "Снабжение", href: "/supply", ready: true },
   { key: "budget", label: "Сметы и бюджет", href: "#", ready: false },
   { key: "control", label: "Контроль стройки", href: "#", ready: false },
   { key: "roles", label: "Роли и доступ", href: "#", ready: false },
