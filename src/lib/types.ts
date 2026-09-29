@@ -204,7 +204,7 @@ export const WEEKLY_STATUS_CLASS: Record<WeeklyStatus, string> = {
 /** draft — черновик, review — на согласовании, signed — подписан заказчиком. */
 export type AcceptanceStatus = "draft" | "review" | "signed";
 
-/** Акт приёмки одного этапа графика. Полноценные ПТО и ИД — фаза 2. */
+/** Акт приёмки (акт скрытых работ) одного этапа графика. */
 export interface AcceptanceAct {
   id: string;
   task_id: string;
@@ -213,6 +213,10 @@ export interface AcceptanceAct {
   act_number: string | null;
   act_date: string | null;
   amount: number | null;
+  /** Что выполнено — содержательная часть акта скрытых работ. */
+  description: string | null;
+  /** Ответственный со стороны подрядчика, подписывающий акт. */
+  responsible: string | null;
   history: HistoryEntry[];
   created_at: string;
   updated_at: string;
@@ -230,12 +234,52 @@ export const ACCEPTANCE_STATUS_CLASS: Record<AcceptanceStatus, string> = {
   signed: "st-good",
 };
 
+/* ---------- Модуль 4: ПТО и ИД ---------- */
+
+/** Запись журнала работ по объекту за дату; этап графика — необязательная привязка. */
+export interface WorkLogEntry {
+  id: string;
+  object_id: string;
+  task_id: string | null;
+  entry_date: string;
+  weather: string | null;
+  crew: string | null;
+  content: string;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type CertDocType = "certificate" | "passport" | "other";
+
+export const CERT_DOC_TYPE_LABEL: Record<CertDocType, string> = {
+  certificate: "Сертификат",
+  passport: "Паспорт",
+  other: "Иной документ",
+};
+
+/** Запись реестра сертификатов и паспортов на материалы. */
+export interface MaterialCertificate {
+  id: string;
+  object_id: string;
+  material_name: string;
+  doc_type: CertDocType;
+  doc_number: string | null;
+  doc_date: string | null;
+  supplier: string | null;
+  /** Привязка к поставке из модуля «Снабжение»; пока модуля нет — всегда null. */
+  delivery_id: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
 export const MODULES = [
   { key: "dashboard", label: "Дашборд", href: "/dashboard", ready: true },
   { key: "objects", label: "Объекты", href: "/objects", ready: true },
   { key: "schedule", label: "График работ", href: "/schedule", ready: true },
   { key: "weekly", label: "Недельные задания", href: "/weekly", ready: true },
-  { key: "pto", label: "ПТО и ИД", href: "#", ready: false },
+  { key: "pto", label: "ПТО и ИД", href: "/pto", ready: true },
   { key: "supply", label: "Снабжение", href: "#", ready: false },
   { key: "budget", label: "Сметы и бюджет", href: "#", ready: false },
   { key: "control", label: "Контроль стройки", href: "#", ready: false },
