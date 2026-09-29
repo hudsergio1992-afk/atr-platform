@@ -799,26 +799,26 @@ function LinesTable({
     );
   }
 
-  // Факт − план по статье: плюс — перерасход, минус — экономия. Статья без факта
+  // План − факт по статье: минус — перерасход, плюс — экономия. Статья без факта
   // ещё не начата, и «экономией» её неизрасходованный план считать нельзя.
   const devOf = (l: BudgetLine): number | null =>
-    l.fact_amount > 0 ? Math.round((l.fact_amount - l.plan_amount) * 100) / 100 : null;
+    l.fact_amount > 0 ? Math.round((l.plan_amount - l.fact_amount) * 100) / 100 : null;
   const fmtDev = (d: number | null) =>
     d === null ? "не начато" : d === 0 ? "—" : `${d > 0 ? "+" : "−"}${fmtMoney(Math.abs(d))}`;
-  const devClass = (d: number | null) => (d === null || d === 0 ? "" : d > 0 ? " is-neg" : " is-pos");
+  const devClass = (d: number | null) => (d === null || d === 0 ? "" : d < 0 ? " is-neg" : " is-pos");
   let overrunSum = 0;
   let savingSum = 0;
   visibleSections.forEach((s) =>
     (bySection.get(s)?.lines || []).forEach((l) => {
       const d = devOf(l);
       if (d === null) return;
-      if (d > 0) overrunSum += d;
-      else savingSum += -d;
+      if (d < 0) overrunSum += -d;
+      else savingSum += d;
     })
   );
   overrunSum = Math.round(overrunSum * 100) / 100;
   savingSum = Math.round(savingSum * 100) / 100;
-  const netDev = Math.round((overrunSum - savingSum) * 100) / 100;
+  const netDev = Math.round((savingSum - overrunSum) * 100) / 100;
   const sectionDev = (ls: BudgetLine[]): number =>
     Math.round(ls.reduce((sum, l) => sum + (devOf(l) ?? 0), 0) * 100) / 100;
 
@@ -831,7 +831,7 @@ function LinesTable({
             <th>План</th>
             <th>Факт</th>
             <th>Прогноз</th>
-            <th title="Плюс — перерасход, минус — экономия. Статьи без факта не учитываются.">Факт − план</th>
+            <th title="Минус — перерасход, плюс — экономия. Статьи без факта не учитываются.">План − факт</th>
           </tr>
         </thead>
         <tbody>
@@ -885,18 +885,18 @@ function LinesTable({
             <td>Перерасход — все красные статьи</td>
             <td colSpan={3} />
             <td className={`mono${overrunSum > 0 ? " is-neg" : ""}`}>
-              {overrunSum > 0 ? `+${fmtMoney(overrunSum)}` : "—"}
+              {overrunSum > 0 ? `−${fmtMoney(overrunSum)}` : "—"}
             </td>
           </tr>
           <tr className="bud-total-row">
             <td>Экономия — все зелёные статьи</td>
             <td colSpan={3} />
             <td className={`mono${savingSum > 0 ? " is-pos" : ""}`}>
-              {savingSum > 0 ? `−${fmtMoney(savingSum)}` : "—"}
+              {savingSum > 0 ? `+${fmtMoney(savingSum)}` : "—"}
             </td>
           </tr>
           <tr className="bud-total-row is-net">
-            <td>Разница: {netDev > 0 ? "перерасход" : netDev < 0 ? "экономия" : "в ноль"}</td>
+            <td>Разница: {netDev < 0 ? "перерасход" : netDev > 0 ? "экономия" : "в ноль"}</td>
             <td colSpan={3} />
             <td className={`mono${devClass(netDev)}`}>{fmtDev(netDev)}</td>
           </tr>
