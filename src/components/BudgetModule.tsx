@@ -91,8 +91,6 @@ export default function BudgetModule() {
   const [schemaMissing, setSchemaMissing] = useState(false);
 
   const [lines, setLines] = useState<BudgetLine[]>([]);
-  /** % факт работ графика по шифру («5.13») — чтобы отличать экономию от ещё не освоенных денег. */
-  const [progressByCode, setProgressByCode] = useState<Map<string, number>>(new Map());
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [signedActsSum, setSignedActsSum] = useState(0);
   const [orderedSupplySum, setOrderedSupplySum] = useState(0);
@@ -141,19 +139,17 @@ export default function BudgetModule() {
   const loadObjectData = useCallback(async (id: string) => {
     if (!id) {
       setLines([]);
-      setProgressByCode(new Map());
       setPayments([]);
       setSignedActsSum(0);
       setOrderedSupplySum(0);
       return;
     }
     setLoadingData(true);
-    const [lineRes, payRes, actRes, supplyRes, taskRes] = await Promise.all([
+    const [lineRes, payRes, actRes, supplyRes] = await Promise.all([
       supabase.from("budget_lines").select("*").eq("object_id", id).order("created_at"),
       supabase.from("customer_payments").select("*").eq("object_id", id).order("payment_date", { ascending: false }),
       supabase.from("acceptance_acts").select("amount").eq("object_id", id).eq("status", "signed"),
       supabase.from("supply_requests").select("order_amount,status").eq("object_id", id).in("status", ["ordered", "delivered"]),
-      supabase.from("schedule_tasks").select("code,progress_fact").eq("object_id", id),
     ]);
     if (id !== objectIdRef.current) return;
     const missing = needsSchemaSetup(lineRes.error) || needsSchemaSetup(payRes.error);
@@ -162,13 +158,6 @@ export default function BudgetModule() {
     else if (payRes.error && !needsSchemaSetup(payRes.error)) setBanner(dbErrorText(payRes.error, "Не удалось загрузить платежи"));
 
     setLines((lineRes.data as BudgetLine[]) || []);
-    setProgressByCode(
-      new Map(
-        ((taskRes.data as { code: string | null; progress_fact: number | null }[]) || [])
-          .filter((t) => t.code)
-          .map((t) => [t.code as string, Number(t.progress_fact) || 0])
-      )
-    );
     setPayments((payRes.data as CustomerPayment[]) || []);
     setSignedActsSum(
       needsSchemaSetup(actRes.error)
@@ -547,7 +536,6 @@ export default function BudgetModule() {
               <LinesTable
                 bySection={bySection}
                 visibleSections={visibleSections}
-                progressByCode={progressByCode}
                 detailId={lineDetailId}
                 setDetailId={setLineDetailId}
                 pendingDeleteId={linePendingDeleteId}
@@ -717,7 +705,6 @@ export default function BudgetModule() {
 function LinesTable({
   bySection,
   visibleSections,
-  progressByCode,
   detailId,
   setDetailId,
   pendingDeleteId,
@@ -727,7 +714,6 @@ function LinesTable({
 }: {
   bySection: Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>;
   visibleSections: BudgetSection[];
-  progressByCode: Map<string, number>;
   detailId: string | null;
   setDetailId: (id: string | null) => void;
   pendingDeleteId: string | null;
@@ -817,38 +803,24 @@ function LinesTable({
   // ещё не начата, и «экономией» её неизрасходованный план считать нельзя.
   const devOf = (l: BudgetLine): number | null =>
     l.fact_amount > 0 ? Math.round((l.fact_amount - l.plan_amount) * 100) / 100 : null;
-  // Статья привязана к работе графика шифром в начале названия («5.13 Монтаж … — ресурс»).
-  // Пока работа не закрыта, факт ниже плана — не экономия, а ещё не освоенные деньги.
-  const isUnspent = (l: BudgetLine): boolean => {
-    const d = devOf(l);
-    if (d === null || d >= 0) return false;
-    const code = /^(\d+(?:\.\d+)*)\s/.exec(l.name)?.[1];
-    const progress = code ? progressByCode.get(code) : undefined;
-    return progress !== undefined && progress < 100;
-  };
   const fmtDev = (d: number | null) =>
     d === null ? "не начато" : d === 0 ? "—" : `${d > 0 ? "+" : "−"}${fmtMoney(Math.abs(d))}`;
   const devClass = (d: number | null) => (d === null || d === 0 ? "" : d > 0 ? " is-neg" : " is-pos");
-  /** Отклонение, которое идёт в итоги: не освоенное по незакрытой работе не считается. */
-  const countedDev = (l: BudgetLine): number => (isUnspent(l) ? 0 : devOf(l) ?? 0);
   let overrunSum = 0;
   let savingSum = 0;
-  let unspentSum = 0;
   visibleSections.forEach((s) =>
     (bySection.get(s)?.lines || []).forEach((l) => {
       const d = devOf(l);
       if (d === null) return;
-      if (isUnspent(l)) unspentSum += -d;
-      else if (d > 0) overrunSum += d;
+      if (d > 0) overrunSum += d;
       else savingSum += -d;
     })
   );
   overrunSum = Math.round(overrunSum * 100) / 100;
   savingSum = Math.round(savingSum * 100) / 100;
-  unspentSum = Math.round(unspentSum * 100) / 100;
   const netDev = Math.round((overrunSum - savingSum) * 100) / 100;
   const sectionDev = (ls: BudgetLine[]): number =>
-    Math.round(ls.reduce((sum, l) => sum + countedDev(l), 0) * 100) / 100;
+    Math.round(ls.reduce((sum, l) => sum + (devOf(l) ?? 0), 0) * 100) / 100;
 
   return (
     <div className="table-wrap">
@@ -859,7 +831,7 @@ function LinesTable({
             <th>План</th>
             <th>Факт</th>
             <th>Прогноз</th>
-            <th title="Плюс — перерасход, минус — экономия. Экономия считается только по закрытым работам графика; по незакрытым остаток плана серым — ещё не освоено.">Факт − план</th>
+            <th title="Плюс — перерасход, минус — экономия. Статьи без факта не учитываются.">Факт − план</th>
           </tr>
         </thead>
         <tbody>
@@ -887,13 +859,7 @@ function LinesTable({
                             {fmtMoney(forecast)}
                             {l.forecast_amount == null && <span className="bud-auto">авто</span>}
                           </td>
-                          {isUnspent(l) ? (
-                            <td className="mono is-unspent" title="Работа по графику не закрыта: остаток плана ещё будет потрачен">
-                              ост. {fmtMoney(Math.abs(dev as number))}
-                            </td>
-                          ) : (
-                            <td className={`mono${devClass(dev)}`}>{fmtDev(dev)}</td>
-                          )}
+                          <td className={`mono${devClass(dev)}`}>{fmtDev(dev)}</td>
                         </tr>
                         {detailId === l.id && (
                           <tr className="detail-row">
@@ -923,7 +889,7 @@ function LinesTable({
             </td>
           </tr>
           <tr className="bud-total-row">
-            <td>Экономия — зелёные статьи закрытых работ</td>
+            <td>Экономия — все зелёные статьи</td>
             <td colSpan={3} />
             <td className={`mono${savingSum > 0 ? " is-pos" : ""}`}>
               {savingSum > 0 ? `−${fmtMoney(savingSum)}` : "—"}
@@ -934,13 +900,6 @@ function LinesTable({
             <td colSpan={3} />
             <td className={`mono${devClass(netDev)}`}>{fmtDev(netDev)}</td>
           </tr>
-          {unspentSum > 0 && (
-            <tr className="bud-total-row is-unspent-row">
-              <td>Ещё не освоено по незакрытым работам — в разницу не входит</td>
-              <td colSpan={3} />
-              <td className="mono is-unspent">{fmtMoney(unspentSum)}</td>
-            </tr>
-          )}
         </tfoot>
       </table>
     </div>
