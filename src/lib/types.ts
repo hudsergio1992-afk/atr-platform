@@ -360,7 +360,55 @@ export const MODULES = [
   { key: "weekly", label: "Недельные задания", href: "/weekly", ready: true },
   { key: "pto", label: "ПТО и ИД", href: "/pto", ready: true },
   { key: "supply", label: "Снабжение", href: "/supply", ready: true },
-  { key: "budget", label: "Сметы и бюджет", href: "#", ready: false },
+  { key: "budget", label: "Сметы и бюджет", href: "/budget", ready: true },
   { key: "control", label: "Контроль стройки", href: "#", ready: false },
   { key: "roles", label: "Роли и доступ", href: "#", ready: false },
 ] as const;
+
+/* ---------- Модуль 6: Сметы и бюджет ---------- */
+
+export type BudgetSection = "materials" | "works" | "equipment";
+
+export const BUDGET_SECTION_LABEL: Record<BudgetSection, string> = {
+  materials: "Материалы",
+  works: "Работы",
+  equipment: "Техника",
+};
+
+/** Фиксированный порядок разделов — на экране, в графике структуры и в подытогах. */
+export const BUDGET_SECTIONS: BudgetSection[] = ["materials", "works", "equipment"];
+
+/** Статья бюджета: план и факт вводятся, прогноз — вручную или авто = max(план, факт). */
+export interface BudgetLine {
+  id: string;
+  object_id: string;
+  section: BudgetSection;
+  name: string;
+  plan_amount: number;
+  fact_amount: number;
+  /** null — прогноз считается автоматически. */
+  forecast_amount: number | null;
+  note: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** Прогноз по статье: вручную вписанный или расчётный. */
+export function budgetForecast(line: Pick<BudgetLine, "plan_amount" | "fact_amount" | "forecast_amount">): number {
+  if (line.forecast_amount !== null && line.forecast_amount !== undefined) return line.forecast_amount;
+  return Math.max(line.plan_amount, line.fact_amount);
+}
+
+/** Платёж заказчика в рамках взаиморасчётов по объекту. */
+export interface CustomerPayment {
+  id: string;
+  object_id: string;
+  payment_date: string;
+  amount: number;
+  document: string | null;
+  note: string | null;
+  history: HistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
