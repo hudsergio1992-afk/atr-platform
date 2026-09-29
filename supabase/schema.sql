@@ -279,6 +279,36 @@ begin
   end if;
 end $$;
 
+-- ── Модуль 6: Сметы и бюджет ─────────────────────────────────────────────────
+create table if not exists public.budget_lines (
+  id              uuid primary key default gen_random_uuid(),
+  object_id       uuid        not null references public.objects (id) on delete cascade,
+  section         text        not null check (section in ('materials', 'works', 'equipment')),
+  name            text        not null,
+  plan_amount     numeric(14, 2) not null default 0 check (plan_amount >= 0),
+  fact_amount     numeric(14, 2) not null default 0 check (fact_amount >= 0),
+  -- null — прогноз считается автоматически (не меньше плана и факта).
+  forecast_amount numeric(14, 2) check (forecast_amount is null or forecast_amount >= 0),
+  note            text,
+  history         jsonb       not null default '[]'::jsonb,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists budget_lines_object_idx on public.budget_lines (object_id, section);
+
+create table if not exists public.customer_payments (
+  id           uuid primary key default gen_random_uuid(),
+  object_id    uuid        not null references public.objects (id) on delete cascade,
+  payment_date date        not null,
+  amount       numeric(14, 2) not null check (amount >= 0),
+  document     text,
+  note         text,
+  history      jsonb       not null default '[]'::jsonb,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index if not exists customer_payments_object_idx on public.customer_payments (object_id, payment_date desc);
+
 -- ── Доступ ───────────────────────────────────────────────────────────────────
 alter table public.objects            enable row level security;
 alter table public.schedule_tasks     enable row level security;
@@ -291,6 +321,8 @@ alter table public.material_certificates  enable row level security;
 alter table public.suppliers        enable row level security;
 alter table public.supply_requests  enable row level security;
 alter table public.supply_offers    enable row level security;
+alter table public.budget_lines     enable row level security;
+alter table public.customer_payments enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
 create policy objects_anon_all on public.objects
@@ -334,4 +366,12 @@ create policy supply_requests_anon_all on public.supply_requests
 
 drop policy if exists supply_offers_anon_all on public.supply_offers;
 create policy supply_offers_anon_all on public.supply_offers
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists budget_lines_anon_all on public.budget_lines;
+create policy budget_lines_anon_all on public.budget_lines
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists customer_payments_anon_all on public.customer_payments;
+create policy customer_payments_anon_all on public.customer_payments
   for all to anon, authenticated using (true) with check (true);
