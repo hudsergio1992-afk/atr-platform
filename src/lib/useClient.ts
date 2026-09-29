@@ -28,6 +28,12 @@ export function useToday(): string | null {
   );
 }
 
+/**
+ * Ключ выбранного объекта — один на все вкладки: объект, выбранный на дашборде
+ * или в любом модуле, открывается и в остальных.
+ */
+export const OBJECT_KEY = "atr.objectId";
+
 /** Чтение настройки интерфейса из localStorage; недоступное хранилище — не ошибка. */
 export function readSetting(key: string): string | null {
   try {
