@@ -21,10 +21,11 @@ import {
 import { buildTree, flattenTree, parseDay, TaskNode } from "@/lib/schedule";
 import { ACCEPTANCE_OVERDUE_DAYS } from "@/lib/portfolioHealth";
 import { fmtDate, fmtDateTime, fmtMoney, plural } from "@/lib/format";
-import { readSetting, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 
-const LS_OBJECT_KEY = "atr.pto.objectId";
+/** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
+const LS_OBJECT_KEY = OBJECT_KEY;
 const MS_PER_DAY = 86_400_000;
 
 type View = "acts" | "log" | "certs";
