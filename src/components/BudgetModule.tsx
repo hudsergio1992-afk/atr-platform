@@ -14,10 +14,11 @@ import {
   HistoryEntry,
 } from "@/lib/types";
 import { fmtDate, fmtDateTime, fmtMoney, plural } from "@/lib/format";
-import { readSetting, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, writeSetting } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 
-const LS_OBJECT_KEY = "atr.budget.objectId";
+/** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
+const LS_OBJECT_KEY = OBJECT_KEY;
 
 type Basis = "plan" | "fact" | "forecast";
 type SectionFilter = BudgetSection | "all";
