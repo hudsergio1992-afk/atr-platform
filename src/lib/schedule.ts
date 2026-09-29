@@ -540,3 +540,138 @@ export function placeByDate(
   });
   return { order: (index + 1) * 10, renumber };
 }
+
+/* ---------- Отставание и прогноз финиша объекта ---------- */
+
+/**
+ * Прогноз финиша по темпу строится, только когда сделано не меньше этой доли:
+ * на старте темп почти нулевой и прогноз уезжает на годы вперёд.
+ */
+export const FORECAST_MIN_PROGRESS = 20;
+
+/** Сколько самых опоздавших незакрытых работ показывать в сводке. */
+const WORST_LIMIT = 3;
+
+export interface LateWork {
+  name: string;
+  /** Дней с планового окончания по сегодня. */
+  days: number;
+  progressFact: number;
+}
+
+export interface ScheduleTimeline {
+  /**
+   * Отставание по графику, дней: на какую дату плана приходится сегодняшний факт.
+   * Плюс — отстаём, минус — опережаем, 0 — идём по плану; null — не посчитать.
+   */
+  lagDays: number | null;
+  /** Прогноз окончания по среднему темпу с начала работ; null — см. forecastNote. */
+  forecastFinish: string | null;
+  /** Почему прогноза нет: мало выполнено, работы не начаты и т. п. */
+  forecastNote: string | null;
+  /** Срок, с которым сравнивается прогноз: договорной срок объекта или конец графика. */
+  deadline: string | null;
+  /** Прогноз минус срок, дней: плюс — опоздаем, минус — успеем с запасом. */
+  forecastVsDeadline: number | null;
+  /** Незакрытые работы с прошедшим плановым сроком, самые просроченные сверху. */
+  worst: LateWork[];
+  /** Сколько всего незакрытых работ с прошедшим сроком. */
+  overdueCount: number;
+}
+
+/**
+ * Одна цифра отставания вместо суммы опозданий по работам: работы идут
+ * параллельно, и сумма многократно считает одни и те же календарные дни.
+ */
+export function scheduleTimeline(
+  nodes: TaskNode[],
+  today: string | null,
+  deadline: string | null
+): ScheduleTimeline {
+  const leaves = flattenTree(nodes).filter((n) => !n.isGroup);
+  const now = parseDay(today);
+  const empty: ScheduleTimeline = {
+    lagDays: null,
+    forecastFinish: null,
+    forecastNote: null,
+    deadline: deadline || maxDay(leaves.map((n) => n.endPlan)),
+    forecastVsDeadline: null,
+    worst: [],
+    overdueCount: 0,
+  };
+  if (now === null || leaves.length === 0) return empty;
+
+  const planned = leaves.filter((n) => parseDay(n.startPlan) !== null && parseDay(n.endPlan) !== null);
+  const totalWeight = planned.reduce((s, n) => s + n.weight, 0);
+  const planAt = (day: number): number => {
+    const iso = dayToISO(day);
+    let sum = 0;
+    for (const n of planned) sum += (planProgress(n.startPlan, n.endPlan, iso) ?? 0) * n.weight;
+    return totalWeight ? sum / totalWeight : 0;
+  };
+  const factNow = totalWeight
+    ? planned.reduce((s, n) => s + n.progressFact * n.weight, 0) / totalWeight
+    : 0;
+
+  // Отставание: ищем день, когда план был равен сегодняшнему факту.
+  let lagDays: number | null = null;
+  if (planned.length) {
+    const first = Math.min(...planned.map((n) => parseDay(n.startPlan) as number));
+    const last = Math.max(...planned.map((n) => parseDay(n.endPlan) as number));
+    const planNow = planAt(now);
+    if (factNow + 0.05 < planNow) {
+      let d = now;
+      while (d > first && planAt(d) > factNow) d -= MS_PER_DAY;
+      lagDays = Math.round((now - d) / MS_PER_DAY);
+    } else if (factNow > planNow + 0.05) {
+      let d = now;
+      while (d < last && planAt(d) < factNow) d += MS_PER_DAY;
+      lagDays = -Math.round((d - now) / MS_PER_DAY);
+    } else {
+      lagDays = 0;
+    }
+  }
+
+  // Прогноз финиша: оставшийся процент делим на средний темп с начала работ.
+  const starts = leaves
+    .map((n) => parseDay(n.startFact) ?? parseDay(n.startPlan))
+    .filter((d): d is number => d !== null);
+  let forecastFinish: string | null = null;
+  let forecastNote: string | null = null;
+  if (factNow >= 100) {
+    forecastFinish = maxDay(leaves.map((n) => n.endFact));
+  } else if (!starts.length || Math.min(...starts) > now) {
+    forecastNote = "работы не начаты";
+  } else if (factNow < FORECAST_MIN_PROGRESS) {
+    forecastNote = `мало данных: выполнено меньше ${FORECAST_MIN_PROGRESS}%`;
+  } else {
+    const elapsed = Math.round((now - Math.min(...starts)) / MS_PER_DAY) + 1;
+    const pace = factNow / elapsed;
+    forecastFinish = dayToISO(now + Math.ceil((100 - factNow) / pace) * MS_PER_DAY);
+  }
+
+  const dl = empty.deadline;
+  const forecastVsDeadline =
+    forecastFinish && parseDay(dl) !== null
+      ? Math.round(((parseDay(forecastFinish) as number) - (parseDay(dl) as number)) / MS_PER_DAY)
+      : null;
+
+  const overdue = leaves
+    .filter((n) => n.progressFact < 100 && parseDay(n.endPlan) !== null && now > (parseDay(n.endPlan) as number))
+    .map((n) => ({
+      name: n.task.name,
+      days: Math.round((now - (parseDay(n.endPlan) as number)) / MS_PER_DAY),
+      progressFact: n.progressFact,
+    }))
+    .sort((a, b) => b.days - a.days);
+
+  return {
+    lagDays,
+    forecastFinish,
+    forecastNote,
+    deadline: dl,
+    forecastVsDeadline,
+    worst: overdue.slice(0, WORST_LIMIT),
+    overdueCount: overdue.length,
+  };
+}
