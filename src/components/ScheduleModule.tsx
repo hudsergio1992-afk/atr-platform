@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
 import { supabase } from "@/lib/supabaseClient";
 import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import {
@@ -81,7 +81,8 @@ const SCALE_LABEL: Record<GanttScale, string> = {
 
 const STATUS_ORDER: Record<ScheduleStatus, number> = { behind: 0, on_track: 1, closed: 2 };
 
-const LS_OBJECT_KEY = "atr.schedule.objectId";
+/** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
+const LS_OBJECT_KEY = OBJECT_KEY;
 const LS_VIEW_KEY = "atr.schedule.view";
 
 /** Предложение сохранить только что заведённую работу в справочник. */
