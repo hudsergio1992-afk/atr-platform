@@ -202,6 +202,83 @@ create table if not exists public.material_certificates (
 create index if not exists material_certificates_object_idx on public.material_certificates (object_id);
 create index if not exists material_certificates_delivery_idx on public.material_certificates (delivery_id);
 
+-- ── Модуль 5: Снабжение ──────────────────────────────────────────────────────
+-- База поставщиков. «% поставок в срок» не хранится — считается из
+-- supply_requests (доставлено ли к сроку), как и остальные производные
+-- показатели платформы.
+create table if not exists public.suppliers (
+  id             uuid primary key default gen_random_uuid(),
+  name           text        not null,
+  contact_person text,
+  phone          text,
+  email          text,
+  -- Рейтинг — субъективная оценка снабженца, 0…5, не считается.
+  rating         numeric(2, 1) check (rating is null or (rating >= 0 and rating <= 5)),
+  payment_terms  text,
+  note           text,
+  history        jsonb       not null default '[]'::jsonb,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+-- Заявка на материал: наименование → сбор предложений → согласование → заказ → доставка.
+-- Один жизненный цикл — одна запись, статус переходит по цепочке; supplier_id и
+-- поля заказа/доставки заполняются по ходу продвижения заявки.
+create table if not exists public.supply_requests (
+  id            uuid primary key default gen_random_uuid(),
+  object_id     uuid        not null references public.objects (id) on delete cascade,
+  task_id       uuid        references public.schedule_tasks (id) on delete set null,
+  material_name text        not null,
+  quantity      numeric(14, 3) check (quantity is null or quantity >= 0),
+  unit          text,
+  needed_by     date,
+  status        text        not null default 'draft'
+                check (status in ('draft', 'pricing', 'approved', 'ordered', 'delivered', 'cancelled')),
+  -- Выбранный поставщик и условия заказа — заполняются на этапе «Заказ».
+  supplier_id   uuid        references public.suppliers (id) on delete set null,
+  order_amount  numeric(14, 2) check (order_amount is null or order_amount >= 0),
+  order_date    date,
+  delivery_due  date,
+  delivery_fact date,
+  note          text,
+  history       jsonb       not null default '[]'::jsonb,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists supply_requests_object_idx on public.supply_requests (object_id, status);
+create index if not exists supply_requests_supplier_idx on public.supply_requests (supplier_id);
+create index if not exists supply_requests_task_idx on public.supply_requests (task_id);
+
+-- Предложения (цены) от поставщиков по заявке. supplier_id необязателен — цену
+-- часто присылают от контакта, которого в справочнике поставщиков ещё нет,
+-- и здесь остаётся его имя текстом, а не потерянная строка.
+create table if not exists public.supply_offers (
+  id            uuid primary key default gen_random_uuid(),
+  request_id    uuid        not null references public.supply_requests (id) on delete cascade,
+  supplier_id   uuid        references public.suppliers (id) on delete set null,
+  supplier_name text,
+  price         numeric(14, 2) check (price is null or price >= 0),
+  note          text,
+  history       jsonb       not null default '[]'::jsonb,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists supply_offers_request_idx on public.supply_offers (request_id);
+
+-- Реестр сертификатов (модуль 4) теперь может ссылаться на заявку снабжения,
+-- по которой материал приехал — таблица supply_requests существует только
+-- с этого места файла, поэтому внешний ключ добавляется отдельным шагом.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'material_certificates_delivery_fkey'
+  ) then
+    alter table public.material_certificates
+      add constraint material_certificates_delivery_fkey
+      foreign key (delivery_id) references public.supply_requests (id) on delete set null;
+  end if;
+end $$;
+
 -- ── Доступ ───────────────────────────────────────────────────────────────────
 alter table public.objects            enable row level security;
 alter table public.schedule_tasks     enable row level security;
@@ -211,6 +288,9 @@ alter table public.stage_catalog      enable row level security;
 alter table public.acceptance_acts    enable row level security;
 alter table public.work_log_entries       enable row level security;
 alter table public.material_certificates  enable row level security;
+alter table public.suppliers        enable row level security;
+alter table public.supply_requests  enable row level security;
+alter table public.supply_offers    enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
 create policy objects_anon_all on public.objects
@@ -242,4 +322,16 @@ create policy work_log_entries_anon_all on public.work_log_entries
 
 drop policy if exists material_certificates_anon_all on public.material_certificates;
 create policy material_certificates_anon_all on public.material_certificates
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists suppliers_anon_all on public.suppliers;
+create policy suppliers_anon_all on public.suppliers
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists supply_requests_anon_all on public.supply_requests;
+create policy supply_requests_anon_all on public.supply_requests
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists supply_offers_anon_all on public.supply_offers;
+create policy supply_offers_anon_all on public.supply_offers
   for all to anon, authenticated using (true) with check (true);
