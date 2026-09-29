@@ -337,6 +337,8 @@ tr.detail-row td { padding: 0; }
 .sch-c-days.is-neg, .sch-c-meta .is-neg { color: var(--st-bad-ink); font-weight: 600; }
 .sch-c-days.is-pos, .sch-c-meta .is-pos, .is-pos { color: var(--st-good-ink); font-weight: 600; }
 .sch-c-days { cursor: help; }
+/* Просроченная дата в обычной таблице (снабжение, замечания). */
+td.is-neg { color: var(--st-bad-ink); font-weight: 600; }
 .sch-c-pf { display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
 .sch-bar {
     flex: 1 1 auto; min-width: 26px; height: 6px; border-radius: 3px;
