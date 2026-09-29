@@ -309,6 +309,51 @@ create table if not exists public.customer_payments (
 );
 create index if not exists customer_payments_object_idx on public.customer_payments (object_id, payment_date desc);
 
+-- ── Модуль 7: Контроль стройки ───────────────────────────────────────────────
+create table if not exists public.photo_reports (
+  id               uuid primary key default gen_random_uuid(),
+  object_id        uuid        not null references public.objects (id) on delete cascade,
+  task_id          uuid        references public.schedule_tasks (id) on delete set null,
+  report_date      date        not null,
+  -- % выполненного объёма «по фото» — только для сверки с графиком, в график не пишется.
+  progress_percent numeric(5, 2) check (progress_percent is null or (progress_percent >= 0 and progress_percent <= 100)),
+  comment          text,
+  -- [{ "path": "...", "name": "..." }] — путь в бакете site-photos, без URL (строится на лету).
+  photos           jsonb       not null default '[]'::jsonb,
+  history          jsonb       not null default '[]'::jsonb,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+create index if not exists photo_reports_object_idx on public.photo_reports (object_id, report_date desc);
+create index if not exists photo_reports_task_idx on public.photo_reports (task_id);
+
+create table if not exists public.site_issues (
+  id          uuid primary key default gen_random_uuid(),
+  object_id   uuid        not null references public.objects (id) on delete cascade,
+  task_id     uuid        references public.schedule_tasks (id) on delete set null,
+  description text        not null,
+  responsible text,
+  due_date    date,
+  status      text        not null default 'open' check (status in ('open', 'in_progress', 'resolved')),
+  resolved_at date,
+  history     jsonb       not null default '[]'::jsonb,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists site_issues_object_idx on public.site_issues (object_id, status);
+create index if not exists site_issues_task_idx on public.site_issues (task_id);
+
+-- Хранилище фотоотчётов: публичный бакет (фото открываются по прямой ссылке
+-- без авторизации — как в задании) с тем же анонимным доступом, что у таблиц.
+insert into storage.buckets (id, name, public)
+values ('site-photos', 'site-photos', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists site_photos_anon_all on storage.objects;
+create policy site_photos_anon_all on storage.objects
+  for all to anon, authenticated
+  using (bucket_id = 'site-photos') with check (bucket_id = 'site-photos');
+
 -- ── Доступ ───────────────────────────────────────────────────────────────────
 alter table public.objects            enable row level security;
 alter table public.schedule_tasks     enable row level security;
@@ -323,6 +368,8 @@ alter table public.supply_requests  enable row level security;
 alter table public.supply_offers    enable row level security;
 alter table public.budget_lines     enable row level security;
 alter table public.customer_payments enable row level security;
+alter table public.photo_reports    enable row level security;
+alter table public.site_issues      enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
 create policy objects_anon_all on public.objects
@@ -374,4 +421,12 @@ create policy budget_lines_anon_all on public.budget_lines
 
 drop policy if exists customer_payments_anon_all on public.customer_payments;
 create policy customer_payments_anon_all on public.customer_payments
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists photo_reports_anon_all on public.photo_reports;
+create policy photo_reports_anon_all on public.photo_reports
+  for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists site_issues_anon_all on public.site_issues;
+create policy site_issues_anon_all on public.site_issues
   for all to anon, authenticated using (true) with check (true);
