@@ -34,6 +34,9 @@ export const EXPECTED: { table: string; columns: string[] }[] = [
   { table: "weekly_assignments", columns: [] },
   { table: "weekly_items", columns: ["crew", "note"] },
   { table: "stage_catalog", columns: [] },
+  { table: "acceptance_acts", columns: ["description", "responsible"] },
+  { table: "work_log_entries", columns: [] },
+  { table: "material_certificates", columns: [] },
 ];
 
 function saysNoTable(error: { code?: string; message?: string } | null): boolean {
