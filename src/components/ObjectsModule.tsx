@@ -8,6 +8,7 @@ import {
   HistoryEntry,
   ObjectStatus,
   ObjectType,
+  PHOTO_BUCKET,
   STATUS_CLASS,
   STATUS_LABEL,
   TYPE_LABEL,
@@ -218,12 +219,29 @@ export default function ObjectsModule() {
     setSaving(false);
   }
 
+  /**
+   * Каскад по внешнему ключу стирает записи фотоотчётов вместе с объектом,
+   * но сами файлы в Storage ни от чего не зависят и остались бы сиротами.
+   * Лучшая попытка: если хранилище недоступно или бакета ещё нет, не мешаем
+   * удалению объекта — это не критично, просто чистка.
+   */
+  async function cleanupObjectPhotos(objectId: string) {
+    try {
+      const { data, error } = await supabase.storage.from(PHOTO_BUCKET).list(objectId, { limit: 1000 });
+      if (error || !data || !data.length) return;
+      await supabase.storage.from(PHOTO_BUCKET).remove(data.map((f) => `${objectId}/${f.name}`));
+    } catch {
+      // Хранилище недоступно — не блокируем удаление объекта из-за файлов.
+    }
+  }
+
   async function doDelete(id: string) {
     const { error } = await supabase.from("objects").delete().eq("id", id);
     if (error) {
       setBanner(dbErrorText(error, "Не удалось удалить объект"));
     } else {
       if (expandedId === id) setExpandedId(null);
+      await cleanupObjectPhotos(id);
       await load();
     }
     setPendingDeleteId(null);
