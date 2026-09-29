@@ -799,6 +799,29 @@ function LinesTable({
     );
   }
 
+  // Факт − план по статье: плюс — перерасход, минус — экономия. Статья без факта
+  // ещё не начата, и «экономией» её неизрасходованный план считать нельзя.
+  const devOf = (l: BudgetLine): number | null =>
+    l.fact_amount > 0 ? Math.round((l.fact_amount - l.plan_amount) * 100) / 100 : null;
+  const fmtDev = (d: number | null) =>
+    d === null ? "не начато" : d === 0 ? "—" : `${d > 0 ? "+" : "−"}${fmtMoney(Math.abs(d))}`;
+  const devClass = (d: number | null) => (d === null || d === 0 ? "" : d > 0 ? " is-neg" : " is-pos");
+  let overrunSum = 0;
+  let savingSum = 0;
+  visibleSections.forEach((s) =>
+    (bySection.get(s)?.lines || []).forEach((l) => {
+      const d = devOf(l);
+      if (d === null) return;
+      if (d > 0) overrunSum += d;
+      else savingSum += -d;
+    })
+  );
+  overrunSum = Math.round(overrunSum * 100) / 100;
+  savingSum = Math.round(savingSum * 100) / 100;
+  const netDev = Math.round((overrunSum - savingSum) * 100) / 100;
+  const sectionDev = (ls: BudgetLine[]): number =>
+    Math.round(ls.reduce((sum, l) => sum + (devOf(l) ?? 0), 0) * 100) / 100;
+
   return (
     <div className="table-wrap">
       <table>
@@ -808,7 +831,7 @@ function LinesTable({
             <th>План</th>
             <th>Факт</th>
             <th>Прогноз</th>
-            <th>Прогноз − план</th>
+            <th title="Плюс — перерасход, минус — экономия. Статьи без факта не учитываются.">Факт − план</th>
           </tr>
         </thead>
         <tbody>
@@ -825,7 +848,7 @@ function LinesTable({
                   .sort((a, b) => a.name.localeCompare(b.name, "ru"))
                   .map((l) => {
                     const forecast = budgetForecast(l);
-                    const dev = Math.round((forecast - l.plan_amount) * 100) / 100;
+                    const dev = devOf(l);
                     return (
                       <Fragment key={l.id}>
                         <tr className="obj-row" onClick={() => setDetailId(detailId === l.id ? null : l.id)}>
@@ -836,9 +859,7 @@ function LinesTable({
                             {fmtMoney(forecast)}
                             {l.forecast_amount == null && <span className="bud-auto">авто</span>}
                           </td>
-                          <td className={`mono${dev > 0 ? " is-neg" : dev < 0 ? " is-pos" : ""}`}>
-                            {dev === 0 ? "—" : `${dev > 0 ? "+" : "−"}${fmtMoney(Math.abs(dev))}`}
-                          </td>
+                          <td className={`mono${devClass(dev)}`}>{fmtDev(dev)}</td>
                         </tr>
                         {detailId === l.id && (
                           <tr className="detail-row">
@@ -853,12 +874,33 @@ function LinesTable({
                   <td className="mono">{fmtMoney(v.plan)}</td>
                   <td className="mono">{fmtMoney(v.fact)}</td>
                   <td className="mono">{fmtMoney(v.forecast)}</td>
-                  <td className="mono">{fmtMoney(Math.round((v.forecast - v.plan) * 100) / 100)}</td>
+                  <td className={`mono${devClass(sectionDev(v.lines))}`}>{fmtDev(sectionDev(v.lines))}</td>
                 </tr>
               </Fragment>
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="bud-total-row">
+            <td>Перерасход — все красные статьи</td>
+            <td colSpan={3} />
+            <td className={`mono${overrunSum > 0 ? " is-neg" : ""}`}>
+              {overrunSum > 0 ? `+${fmtMoney(overrunSum)}` : "—"}
+            </td>
+          </tr>
+          <tr className="bud-total-row">
+            <td>Экономия — все зелёные статьи</td>
+            <td colSpan={3} />
+            <td className={`mono${savingSum > 0 ? " is-pos" : ""}`}>
+              {savingSum > 0 ? `−${fmtMoney(savingSum)}` : "—"}
+            </td>
+          </tr>
+          <tr className="bud-total-row is-net">
+            <td>Разница: {netDev > 0 ? "перерасход" : netDev < 0 ? "экономия" : "в ноль"}</td>
+            <td colSpan={3} />
+            <td className={`mono${devClass(netDev)}`}>{fmtDev(netDev)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
