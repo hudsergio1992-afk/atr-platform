@@ -25,7 +25,7 @@ import {
   RISK_LABEL,
 } from "@/lib/portfolioHealth";
 import { fmtDate, fmtMoney, fmtPercent, plural } from "@/lib/format";
-import { useToday } from "@/lib/useClient";
+import { OBJECT_KEY, useToday, writeSetting } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 
 interface PendingFlat {
@@ -326,7 +326,11 @@ export default function PortfolioHealth() {
             id="dash-object"
             className="filter"
             value={selectedObjectId}
-            onChange={(e) => setSelectedObjectId(e.target.value)}
+            onChange={(e) => {
+              setSelectedObjectId(e.target.value);
+              // Конкретный объект открывается и на остальных вкладках; «Все объекты» их не трогает.
+              if (e.target.value) writeSetting(OBJECT_KEY, e.target.value);
+            }}
           >
             <option value="">Все объекты</option>
             {objects.map((o) => (
