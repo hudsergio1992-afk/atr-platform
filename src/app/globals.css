@@ -20,6 +20,11 @@
     --st-neutral-bg: #e6e9e6;
     --st-neutral-ink: #464e47;
     --shadow: 0 8px 24px -12px rgb(24 28 25 / 0.35);
+    /* Категориальные цвета разделов сметы — первые три слота проверенной палитры,
+       валидны попарно (all-pairs) в обеих темах: см. dataviz skill, palette.md. */
+    --sect-materials: #2a78d6;
+    --sect-works: #eb6834;
+    --sect-equipment: #1baf7a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +48,9 @@
           --st-neutral-bg: #33302a;
           --st-neutral-ink: #c9c2b2;
           --shadow: 0 8px 28px -10px rgb(0 0 0 / 0.55);
+          --sect-materials: #3987e5;
+          --sect-works: #d95926;
+          --sect-equipment: #199e70;
     }
 }
 
@@ -66,6 +74,9 @@
     --st-neutral-bg: #33302a;
     --st-neutral-ink: #c9c2b2;
     --shadow: 0 8px 28px -10px rgb(0 0 0 / 0.55);
+    --sect-materials: #3987e5;
+    --sect-works: #d95926;
+    --sect-equipment: #199e70;
 }
 
 * { box-sizing: border-box; }
@@ -706,6 +717,48 @@ td.risk-reasons { color: var(--muted); font-size: 12.5px; max-width: 260px; }
 .curve-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .curve-legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
 .curve-foot { margin-top: 10px; }
+
+/* ---- Сметы и бюджет: структура затрат ---- */
+.bud-share {
+    display: flex; height: 16px; border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border); background: var(--surface-3);
+}
+.bud-share-seg:first-child { border-radius: 7px 0 0 7px; }
+.bud-share-seg:last-child { border-radius: 0 7px 7px 0; }
+.bud-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+.bud-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.bud-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: 0 0 auto; }
+.bud-rows { display: flex; flex-direction: column; }
+.bud-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+.bud-row:first-child { border-top: none; }
+.bud-row-label { flex: 0 0 108px; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 7px; }
+.bud-row-label i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: 0 0 auto; }
+.bud-track { position: relative; flex: 1 1 auto; height: 18px; background: var(--surface-3); border-radius: 5px; }
+.bud-plan-zone { position: absolute; top: 0; bottom: 0; left: 0; background: var(--surface-2); border-right: 2px dashed var(--border); border-radius: 5px 0 0 5px; }
+.bud-fact-fill { position: absolute; top: 2px; bottom: 2px; left: 0; border-radius: 3px; }
+.bud-forecast-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+.bud-row-nums { flex: 0 0 auto; display: flex; gap: 12px; font-size: 12px; color: var(--muted); white-space: nowrap; text-align: right; }
+.bud-row-nums b { color: var(--ink); font-weight: 600; }
+.bud-group-head td {
+    background: var(--surface-2); font-weight: 700; font-size: 12.5px;
+    text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 14px;
+}
+.bud-group-foot td { background: var(--surface-2); font-weight: 600; border-top: 1px dashed var(--border); }
+.bud-auto { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; margin-left: 4px; }
+.bud-settle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 4px 0 18px; }
+.bud-settle-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+}
+.bud-settle-card h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+.bud-settle-card .v { font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.bud-settle-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.bud-settle-card a { color: var(--accent); }
+.bud-settle-card .v.is-neg, .bud-row-nums .is-neg { color: var(--st-bad-ink); }
+@media (max-width: 720px) {
+    .bud-settle { grid-template-columns: 1fr; }
+    .bud-row { flex-wrap: wrap; }
+    .bud-row-nums { flex: 1 1 100%; justify-content: space-between; }
+}
 
 @media (max-width: 860px) {
     .sch-head, .sch-row, .sch-detail-row { min-width: 0; }
