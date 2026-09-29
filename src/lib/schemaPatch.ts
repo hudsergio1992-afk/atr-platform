@@ -15,11 +15,16 @@ export interface SchemaGap {
   tables: string[];
   /** Колонки, которых нет в существующих таблицах. */
   columns: { table: string; column: string }[];
+  /** Бакеты Supabase Storage, которых нет (например, для фотоотчётов). */
+  buckets: string[];
 }
 
 export function gapIsEmpty(gap: SchemaGap): boolean {
-  return gap.tables.length === 0 && gap.columns.length === 0;
+  return gap.tables.length === 0 && gap.columns.length === 0 && gap.buckets.length === 0;
 }
+
+/** Бакеты Storage, которые должны существовать. */
+export const EXPECTED_BUCKETS: string[] = ["site-photos"];
 
 /**
  * Поля, появившиеся после первых версий. Колонки, которые были с самого
@@ -42,6 +47,8 @@ export const EXPECTED: { table: string; columns: string[] }[] = [
   { table: "supply_offers", columns: [] },
   { table: "budget_lines", columns: [] },
   { table: "customer_payments", columns: [] },
+  { table: "photo_reports", columns: [] },
+  { table: "site_issues", columns: [] },
 ];
 
 function saysNoTable(error: { code?: string; message?: string } | null): boolean {
@@ -70,13 +77,35 @@ function saysNoColumn(
   );
 }
 
-/** Опрашивает базу: какие таблицы и колонки она знает, а какие нет. */
+/**
+ * Бакет не существует — проверяем по ответу публичной ссылки, а не по list():
+ * на хостед-Supabase анонимный ключ не всегда имеет право на storage.list,
+ * а вот сам объект по публичному URL либо отдаётся, либо отвечает явной
+ * ошибкой «Bucket not found» — этот сигнал надёжнее в проде.
+ */
+export async function bucketMissing(bucket: string): Promise<boolean> {
+  try {
+    const { data } = supabase.storage.from(bucket).getPublicUrl(".probe");
+    const res = await fetch(data.publicUrl, { method: "GET", cache: "no-store" });
+    if (res.status === 404) {
+      const text = await res.text().catch(() => "");
+      return /bucket not found/i.test(text);
+    }
+    return false;
+  } catch {
+    // Сеть недоступна — не считаем это отсутствием бакета, промолчим.
+    return false;
+  }
+}
+
+/** Опрашивает базу: какие таблицы, колонки и бакеты Storage она знает, а какие нет. */
 export async function detectSchemaGap(): Promise<SchemaGap> {
   const tables: string[] = [];
   const columns: { table: string; column: string }[] = [];
+  const buckets: string[] = [];
 
-  await Promise.all(
-    EXPECTED.map(async ({ table, columns: expected }) => {
+  await Promise.all([
+    ...EXPECTED.map(async ({ table, columns: expected }) => {
       const { error } = await supabase.from(table).select("id").limit(1);
       if (saysNoTable(error)) {
         tables.push(table);
@@ -90,12 +119,16 @@ export async function detectSchemaGap(): Promise<SchemaGap> {
           if (saysNoColumn(res.error, column)) columns.push({ table, column });
         })
       );
-    })
-  );
+    }),
+    ...EXPECTED_BUCKETS.map(async (bucket) => {
+      if (await bucketMissing(bucket)) buckets.push(bucket);
+    }),
+  ]);
 
   tables.sort();
   columns.sort((a, b) => a.table.localeCompare(b.table) || a.column.localeCompare(b.column));
-  return { tables, columns };
+  buckets.sort();
+  return { tables, columns, buckets };
 }
 
 /**
@@ -164,6 +197,7 @@ export function patchFor(schemaSql: string, gap: SchemaGap): string {
   if (gapIsEmpty(gap)) return "";
   const missingTables = new Set(gap.tables);
   const missingColumns = gap.columns;
+  const missingBuckets = new Set(gap.buckets);
 
   const kept: string[] = [];
   for (const statement of splitStatements(schemaSql)) {
@@ -187,7 +221,17 @@ export function patchFor(schemaSql: string, gap: SchemaGap): string {
     const forMissingColumn = missingColumns.some(
       (c) => mentionsWord(code, c.column) && mentionsWord(code, c.table)
     );
-    if (forMissingColumn) kept.push(statement);
+    if (forMissingColumn) {
+      kept.push(statement);
+      continue;
+    }
+
+    // Политики бакета называются по имени с подчёркиванием (site_photos_anon_all),
+    // а сам бакет — с дефисом ('site-photos'), поэтому проверяем оба написания.
+    const forMissingBucket = [...missingBuckets].some(
+      (b) => code.includes(b) || code.includes(b.replace(/-/g, "_"))
+    );
+    if (forMissingBucket) kept.push(statement);
   }
 
   if (!kept.length) return "";
@@ -206,5 +250,6 @@ export function gapWords(gap: SchemaGap): string[] {
   byTable.forEach((cols, table) => {
     out.push(`в таблице «${table}» — ${cols.map((c) => `«${c}»`).join(", ")}`);
   });
+  gap.buckets.forEach((b) => out.push(`хранилище файлов «${b}»`));
   return out;
 }
