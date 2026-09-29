@@ -87,11 +87,11 @@ export async function bucketMissing(bucket: string): Promise<boolean> {
   try {
     const { data } = supabase.storage.from(bucket).getPublicUrl(".probe");
     const res = await fetch(data.publicUrl, { method: "GET", cache: "no-store" });
-    if (res.status === 404) {
-      const text = await res.text().catch(() => "");
-      return /bucket not found/i.test(text);
-    }
-    return false;
+    if (res.ok) return false;
+    // Хостед-Supabase отвечает на отсутствующий бакет кодом 400 с телом
+    // {"statusCode":"404","error":"Bucket not found"}, поэтому смотрим на текст, а не на статус.
+    const text = await res.text().catch(() => "");
+    return /bucket not found|NoSuchBucket/i.test(text);
   } catch {
     // Сеть недоступна — не считаем это отсутствием бакета, промолчим.
     return false;
