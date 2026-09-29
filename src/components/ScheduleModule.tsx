@@ -25,6 +25,7 @@ import {
   flattenTree,
   placeByDate,
   planProgress,
+  scheduleTimeline,
   summarize,
   TaskNode,
 } from "@/lib/schedule";
@@ -384,6 +385,10 @@ export default function ScheduleModule() {
   }, [tree, search, filterStatus, filterKind, matches]);
 
   const summary = useMemo(() => summarize(tree), [tree]);
+  const timeline = useMemo(
+    () => scheduleTimeline(tree, today, currentObject?.end_date_planned || null),
+    [tree, today, currentObject]
+  );
 
   /** Этапы с подэтапами — только их и можно свернуть. */
   const groupIds = useMemo(() => {
@@ -1349,26 +1354,79 @@ export default function ScheduleModule() {
         </div>
         <div className="chip-row">
           <span
-            className="chip st-good"
-            title="Сумма дней по работам, сданным раньше планового срока"
+            className={`chip ${
+              timeline.lagDays === null
+                ? "st-neutral"
+                : timeline.lagDays > 0
+                  ? "st-bad"
+                  : "st-good"
+            }`}
+            title="На какую дату плана приходится сегодняшний факт: насколько объект отстал от графика в календарных днях"
           >
-            +<span className="n">{summary.daysAhead}</span>{" "}
-            {plural(summary.daysAhead, "день в плюс", "дня в плюс", "дней в плюс")}
+            {timeline.lagDays === null ? (
+              "отставание —"
+            ) : timeline.lagDays > 0 ? (
+              <>
+                отставание <span className="n">{timeline.lagDays}</span>{" "}
+                {plural(timeline.lagDays, "день", "дня", "дней")}
+              </>
+            ) : timeline.lagDays < 0 ? (
+              <>
+                опережение <span className="n">{-timeline.lagDays}</span>{" "}
+                {plural(-timeline.lagDays, "день", "дня", "дней")}
+              </>
+            ) : (
+              "идём по графику"
+            )}
           </span>
           <span
-            className="chip st-bad"
-            title="Сумма дней по работам, сданным позже срока и просроченным незакрытым"
+            className={`chip ${
+              timeline.forecastVsDeadline === null
+                ? "st-neutral"
+                : timeline.forecastVsDeadline > 0
+                  ? "st-bad"
+                  : "st-good"
+            }`}
+            title={`Прогноз окончания по среднему темпу с начала работ; сравнивается со сроком ${
+              currentObject?.end_date_planned ? "окончания объекта" : "окончания графика"
+            } ${fmtDate(timeline.deadline)}`}
           >
-            −<span className="n">{summary.daysLate}</span>{" "}
-            {plural(summary.daysLate, "день в минус", "дня в минус", "дней в минус")}
+            прогноз финиша{" "}
+            {timeline.forecastFinish ? (
+              <>
+                <span className="n">{fmtDate(timeline.forecastFinish)}</span>
+                {timeline.forecastVsDeadline !== null && (
+                  <span className="chip-sub">
+                    {timeline.forecastVsDeadline > 0
+                      ? ` +${timeline.forecastVsDeadline} дн. к сроку`
+                      : timeline.forecastVsDeadline < 0
+                        ? ` запас ${-timeline.forecastVsDeadline} дн.`
+                        : " в срок"}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="chip-sub">— {timeline.forecastNote || "нет данных"}</span>
+            )}
           </span>
-          <span
-            className={`chip ${summary.daysNet > 0 ? "st-good" : summary.daysNet < 0 ? "st-bad" : "st-neutral"}`}
-            title="Сальдо: выигранные дни минус потерянные"
-          >
-            итог <span className="n">{fmtDaysGain(summary.daysNet)}</span>
+          <span className="chip st-neutral mono" title="Срок, с которым сравнивается прогноз">
+            срок {fmtDate(timeline.deadline)}
           </span>
         </div>
+        {timeline.worst.length > 0 && (
+          <div className="late-list">
+            <span className="late-list-title">
+              Просрочены: {timeline.overdueCount}{" "}
+              {plural(timeline.overdueCount, "работа", "работы", "работ")}, дольше всех —
+            </span>
+            {timeline.worst.map((w) => (
+              <span key={w.name} className="late-item">
+                {w.name} <span className="mono is-neg">−{w.days} дн.</span>{" "}
+                <span className="mono chip-sub">({fmtPercent(w.progressFact)})</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {summary.costTotal !== null && (
           <div className="chip-row">
