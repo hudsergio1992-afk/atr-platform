@@ -53,7 +53,7 @@ import {
 import { loadCatalogStages, saveCatalogStage } from "@/lib/stageCatalog";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
-import { closingLineName, CostByWork, loadCostByWork } from "@/lib/zeroCost";
+import { closingLineName, CostByWork, loadCostByWork, spentByCode } from "@/lib/zeroCost";
 import ScheduleImport from "@/components/ScheduleImport";
 
 type ViewMode = "tree" | "table" | "gantt";
@@ -197,14 +197,24 @@ function diffText(
   return parts.join("; ");
 }
 
-/** Подсказка к столбцу стоимости: сколько освоено и сколько осталось. */
-function costWords(n: TaskNode): string {
+/**
+ * Подсказка к столбцу стоимости. «Выполнено в ₽» = стоимость × % готовности — это объём
+ * сделанной работы в деньгах, а не потраченные деньги; потрачено — факт из «Смет и бюджета».
+ */
+function costWords(n: TaskNode, spent: number | null): string {
   if (n.costTotal === null) return "Стоимость не задана";
   const done = n.costDone ?? 0;
   const left = Math.round((n.costTotal - done) * 100) / 100;
   const perUnit =
     n.costPerUnit === null ? "" : `; цена за единицу ${fmtMoney(n.costPerUnit)}/${n.unit || "ед."}`;
-  return `Стоимость ${fmtMoney(n.costTotal)}; освоено ${fmtMoney(done)}; осталось ${fmtMoney(left)}${perUnit}`;
+  let spentPart = "; потрачено по бюджету — статей нет";
+  if (spent !== null) {
+    const gap = Math.round((spent - done) * 100) / 100;
+    spentPart = `; потрачено по бюджету ${fmtMoney(spent)}${
+      gap > 0 ? ` — траты обгоняют работу на ${fmtMoney(gap)}` : gap < 0 ? ` — работа обгоняет траты на ${fmtMoney(-gap)}` : ""
+    }`;
+  }
+  return `Стоимость ${fmtMoney(n.costTotal)}; выполнено в ₽ ${fmtMoney(done)}; осталось выполнить ${fmtMoney(left)}${spentPart}${perUnit}`;
 }
 
 /** Оставляет узлы, подходящие под условие, вместе с их предками и потомками. */
@@ -405,6 +415,10 @@ export default function ScheduleModule() {
   }, [tree, search, filterStatus, filterKind, matches]);
 
   const summary = useMemo(() => summarize(tree), [tree]);
+  /** Фактически потрачено по «Сметам и бюджету» и насколько траты обгоняют выполненную работу. */
+  const spentTotal = useMemo(() => spentByCode(null, costByWork), [costByWork]);
+  const spentGap =
+    spentTotal === null || summary.costDone === null ? null : Math.round((spentTotal - summary.costDone) * 100) / 100;
   const timeline = useMemo(
     () => scheduleTimeline(tree, today, currentObject?.end_date_planned || null),
     [tree, today, currentObject]
@@ -1294,7 +1308,7 @@ export default function ScheduleModule() {
           >
             {fmtDaysGain(n.daysGain)}
           </div>
-          <div className="sch-c sch-c-cost mono" title={costWords(n)}>
+          <div className="sch-c sch-c-cost mono" title={costWords(n, spentByCode(n.task.code, costByWork))}>
             {n.costTotal === null ? "—" : fmtMoney(n.costTotal)}
           </div>
           <div className="sch-c sch-c-status">
@@ -1320,7 +1334,7 @@ export default function ScheduleModule() {
             )}
             {n.costTotal !== null && (
               <span className="mono">
-                {fmtMoney(n.costTotal)} · освоено {fmtMoney(n.costDone)}
+                {fmtMoney(n.costTotal)} · выполнено {fmtMoney(n.costDone)}
               </span>
             )}
           </div>
@@ -1541,8 +1555,11 @@ export default function ScheduleModule() {
             <span className="chip st-neutral" title="Стоимость работ, у которых она проставлена">
               стоимость <span className="n mono">{fmtMoney(summary.costTotal)}</span>
             </span>
-            <span className="chip st-good" title="Стоимость, приходящаяся на выполненные проценты">
-              освоено <span className="n mono">{fmtMoney(summary.costDone)}</span>
+            <span
+              className="chip st-good"
+              title="Стоимость × % готовности: сколько работы сделано в деньгах. Это не потраченные деньги — они в «Сметах и бюджете»"
+            >
+              выполнено в ₽ <span className="n mono">{fmtMoney(summary.costDone)}</span>
               {summary.costTotal > 0 && (
                 <span className="chip-sub">
                   {" "}
@@ -1552,9 +1569,26 @@ export default function ScheduleModule() {
                 </span>
               )}
             </span>
-            <span className="chip st-warn" title="Сколько ещё предстоит освоить">
-              осталось <span className="n mono">{fmtMoney(summary.costLeft)}</span>
+            <span className="chip st-warn" title="Сколько работы ещё предстоит выполнить, в деньгах">
+              осталось выполнить <span className="n mono">{fmtMoney(summary.costLeft)}</span>
             </span>
+            {spentTotal !== null && (
+              <span className="chip st-neutral" title="Фактические затраты по «Сметам и бюджету»">
+                потрачено <span className="n mono">{fmtMoney(spentTotal)}</span>
+                {summary.costTotal > 0 && (
+                  <span className="chip-sub"> {fmtPercent(Math.round((spentTotal / summary.costTotal) * 1000) / 10)}</span>
+                )}
+              </span>
+            )}
+            {spentGap !== null && spentGap !== 0 && (
+              <span
+                className={`chip ${spentGap > 0 ? "st-bad" : "st-good"}`}
+                title="Потрачено − выполнено в ₽. Часть разницы может быть авансами за ещё не сделанную работу"
+              >
+                {spentGap > 0 ? "траты обгоняют работу на " : "работа обгоняет траты на "}
+                <span className="n mono">{fmtMoney(Math.abs(spentGap))}</span>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -1679,7 +1713,7 @@ export default function ScheduleModule() {
             <div className="sch-c sch-c-pf" title="Сколько готово на самом деле">% факт</div>
             <div className="sch-c sch-c-dev" title="Факт минус план в процентных пунктах: минус — отставание, плюс — опережение">Откл.</div>
             <div className="sch-c sch-c-days" title="Дни относительно планового окончания: плюс — раньше срока, минус — позже или просрочено">Дни ±</div>
-            <div className="sch-c sch-c-cost" title="Стоимость этапа; в подсказке к строке — сколько из неё освоено">Стоимость</div>
+            <div className="sch-c sch-c-cost" title="Стоимость этапа; в подсказке к строке — сколько выполнено в ₽ и сколько потрачено">Стоимость</div>
             <div className="sch-c sch-c-status">Статус</div>
           </div>
           {showRows && treeRows.length ? (
@@ -1727,7 +1761,7 @@ export default function ScheduleModule() {
             </button>
             <button
               className="sch-c sch-c-cost"
-              title="Стоимость этапа; в подсказке к строке — сколько из неё освоено"
+              title="Стоимость этапа; в подсказке к строке — сколько выполнено в ₽ и сколько потрачено"
               onClick={() => sortBy("cost")}
             >
               Стоимость{sortArrow("cost")}
