@@ -27,7 +27,10 @@ export function workCodeOf(name: string): string | null {
   return /^(\d+(?:\.\d+)*)\s/.exec(name)?.[1] ?? null;
 }
 
-/** Статьи бюджета объекта, сгруппированные по шифру работы, с суммами плана и факта. */
+/**
+ * Статьи бюджета объекта, сгруппированные по шифру работы, с суммами плана и факта.
+ * Статьи без шифра — под ключом "" (чтобы общий факт затрат был полным).
+ */
 export async function loadCostByWork(objectId: string): Promise<Map<string, CostByWork>> {
   const out = new Map<string, CostByWork>();
   if (!objectId) return out;
@@ -39,8 +42,7 @@ export async function loadCostByWork(objectId: string): Promise<Map<string, Cost
   // Бюджета нет или он недоступен — считаем, что статей у работ нет.
   if (error || !data) return out;
   (data as WorkBudgetLine[]).forEach((l) => {
-    const code = workCodeOf(l.name);
-    if (!code) return;
+    const code = workCodeOf(l.name) ?? "";
     const cur = out.get(code) || { plan: 0, fact: 0, lines: [] };
     cur.plan += Number(l.plan_amount) || 0;
     cur.fact += Number(l.fact_amount) || 0;
@@ -54,6 +56,22 @@ export async function loadCostByWork(objectId: string): Promise<Map<string, Cost
 export function workFactEntered(code: string | null, costs: Map<string, CostByWork>): boolean {
   const c = code ? costs.get(code) : undefined;
   return !!c && c.fact > 0;
+}
+
+/**
+ * Потрачено по бюджету на работу или этап: статьи с этим шифром и шифрами вложенных работ
+ * («4» — это 4, 4.1, 4.6 …). Без шифра — весь факт объекта, null — если статей нет.
+ */
+export function spentByCode(code: string | null, costs: Map<string, CostByWork>): number | null {
+  let sum = 0;
+  let found = false;
+  costs.forEach((c, k) => {
+    if (code === null || k === code || k.startsWith(code + ".")) {
+      sum += c.fact;
+      found = true;
+    }
+  });
+  return found ? Math.round(sum * 100) / 100 : null;
 }
 
 /** Название статьи, которая заводится при закрытии работы без статей бюджета. */
