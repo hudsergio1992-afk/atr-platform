@@ -53,6 +53,7 @@ import {
 import { loadCatalogStages, saveCatalogStage } from "@/lib/stageCatalog";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
+import { CostByWork, loadCostByWork, zeroCostPlan } from "@/lib/zeroCost";
 import ScheduleImport from "@/components/ScheduleImport";
 
 type ViewMode = "tree" | "table" | "gantt";
@@ -109,6 +110,8 @@ interface FormState {
   volumeTotal: string;
   unit: string;
   costTotal: string;
+  /** Почему работа закрывается без затрат — обязателен, если на неё заложены деньги, а факт 0. */
+  closeComment: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -126,6 +129,7 @@ const EMPTY_FORM: FormState = {
   volumeTotal: "",
   unit: "",
   costTotal: "",
+  closeComment: "",
 };
 
 const FIELD_LABEL: Record<keyof FormState, string> = {
@@ -143,6 +147,7 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   volumeTotal: "Объём",
   unit: "Ед. изм.",
   costTotal: "Стоимость",
+  closeComment: "Закрыта без затрат, причина",
 };
 
 function toForm(t: ScheduleTask | null): FormState {
@@ -162,6 +167,7 @@ function toForm(t: ScheduleTask | null): FormState {
     volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
     unit: t.unit || "",
     costTotal: t.cost_total != null ? String(t.cost_total) : "",
+    closeComment: "",
   };
 }
 
@@ -226,6 +232,8 @@ export default function ScheduleModule() {
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
   const [objectId, setObjectId] = useState<string>("");
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
+  /** План и факт статей бюджета по шифру работы — для правила «закрытие без затрат». */
+  const [costByWork, setCostByWork] = useState<Map<string, CostByWork>>(new Map());
   const [loadingObjects, setLoadingObjects] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
@@ -301,12 +309,16 @@ export default function ScheduleModule() {
       return;
     }
     setLoadingTasks(true);
-    const { data, error } = await supabase
-      .from("schedule_tasks")
-      .select("*")
-      .eq("object_id", id)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
+    const [{ data, error }, costs] = await Promise.all([
+      supabase
+        .from("schedule_tasks")
+        .select("*")
+        .eq("object_id", id)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      loadCostByWork(id),
+    ]);
+    setCostByWork(costs);
     if (error) {
       setBanner(dbErrorText(error, "Не удалось загрузить график"));
       setSchemaMissing(needsSchemaSetup(error));
@@ -633,6 +645,19 @@ export default function ScheduleModule() {
   const editingNode = editingId ? nodeById.get(editingId) || null : null;
   const editingIsGroup = !!editingNode?.isGroup;
 
+  /**
+   * Работу закрывают (было меньше 100%, стало 100%), а на неё заложены деньги и
+   * факт затрат по её статьям бюджета 0 ₽ — тогда без комментария не сохранить.
+   */
+  const zeroClosePlan = useMemo(() => {
+    if (!editingId || editingIsGroup) return null;
+    const old = tasks.find((t) => t.id === editingId);
+    if (!old || Number(old.progress_fact) >= 100) return null;
+    if (Number(form.progressFact || 0) < 100) return null;
+    const cost = form.costTotal === "" ? null : Number(form.costTotal);
+    return zeroCostPlan(old.code, cost, costByWork);
+  }, [editingId, editingIsGroup, tasks, form.progressFact, form.costTotal, costByWork]);
+
   /** Живой пересчёт производных прямо в форме, до сохранения. */
   const formPreview = useMemo(() => {
     if (editingIsGroup && editingNode) {
@@ -828,6 +853,12 @@ export default function ScheduleModule() {
     }
     if (form.kind === "extra" && !form.reason.trim()) {
       setBanner("У непредвиденной работы укажите основание — через полгода никто не вспомнит, откуда она взялась.");
+      return;
+    }
+    if (zeroClosePlan !== null && !form.closeComment.trim()) {
+      setBanner(
+        `На работу заложено ${fmtMoney(zeroClosePlan)}, а факт затрат по ней 0 ₽. Закрыть её можно только с комментарием — почему затрат не было.`
+      );
       return;
     }
 
@@ -1980,6 +2011,22 @@ export default function ScheduleModule() {
             впишете объём — пересчитается процент. Если объём работы не задан, готовность
             отмечается только процентом.
           </p>
+          {zeroClosePlan !== null && (
+            <div className="field zero-close">
+              <label>
+                Почему работа закрывается без затрат <span className="req">*</span>
+              </label>
+              <textarea
+                placeholder="напр. материал давальческий, техника не понадобилась; или факт ещё не внесён — внести до …"
+                value={form.closeComment}
+                onChange={(e) => setForm({ ...form, closeComment: e.target.value })}
+              />
+              <p className="hint">
+                На работу заложено {fmtMoney(zeroClosePlan)}, а по её статьям в «Сметах и бюджете» потрачено 0 ₽.
+                Без комментария закрыть нельзя; комментарий попадёт в историю работы.
+              </p>
+            </div>
+          )}
 
           <div className="field-row">
             <div className="field">
