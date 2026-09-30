@@ -43,8 +43,9 @@ import {
   fmtRange,
   plural,
 } from "@/lib/format";
-import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
+import CurrentObject from "@/components/CurrentObject";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -253,14 +254,6 @@ export default function WeeklyModule() {
     (id: string) => nodeById.get(id)?.task.name || "этап вне графика",
     [nodeById]
   );
-
-  function changeObject(id: string) {
-    setObjectId(id);
-    setDetailId(null);
-    setPendingDeleteId(null);
-    setFactDraft({});
-    writeSetting(LS_OBJECT_KEY, id);
-  }
 
   function goWeek(delta: number) {
     if (!weekStart) return;
@@ -1040,21 +1033,7 @@ export default function WeeklyModule() {
       {schemaMissing && <SchemaSetup onRecheck={() => loadWeekData(objectId)} />}
 
       <div className="obj-picker">
-        <label htmlFor="wk-object">Объект</label>
-        <select
-          id="wk-object"
-          className="filter"
-          value={objectId}
-          onChange={(e) => changeObject(e.target.value)}
-          disabled={loadingObjects || objects.length === 0}
-        >
-          {objects.length === 0 && <option value="">{loadingObjects ? "Загрузка…" : "Объектов нет"}</option>}
-          {objects.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
+        <CurrentObject name={objects.find((o) => o.id === objectId)?.name ?? null} loading={loadingObjects} />
       </div>
 
       <div className="wk-weekbar">
