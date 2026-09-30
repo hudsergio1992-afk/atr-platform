@@ -45,7 +45,7 @@ export const EXPECTED: { table: string; columns: string[] }[] = [
   { table: "suppliers", columns: [] },
   { table: "supply_requests", columns: [] },
   { table: "supply_offers", columns: [] },
-  { table: "budget_lines", columns: [] },
+  { table: "budget_lines", columns: ["zero_fact_confirmed"] },
   { table: "customer_payments", columns: [] },
   { table: "photo_reports", columns: [] },
   { table: "site_issues", columns: [] },
