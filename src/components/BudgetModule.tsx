@@ -39,6 +39,7 @@ interface LineForm {
   factAmount: string;
   forecastAmount: string;
   note: string;
+  zeroConfirmed: boolean;
 }
 
 const EMPTY_LINE_FORM: LineForm = {
@@ -48,6 +49,7 @@ const EMPTY_LINE_FORM: LineForm = {
   factAmount: "",
   forecastAmount: "",
   note: "",
+  zeroConfirmed: false,
 };
 
 function lineToForm(l: BudgetLine | null): LineForm {
@@ -59,6 +61,7 @@ function lineToForm(l: BudgetLine | null): LineForm {
     factAmount: String(l.fact_amount ?? 0),
     forecastAmount: l.forecast_amount != null ? String(l.forecast_amount) : "",
     note: l.note || "",
+    zeroConfirmed: !!l.zero_fact_confirmed,
   };
 }
 
@@ -92,6 +95,8 @@ export default function BudgetModule() {
   const [schemaMissing, setSchemaMissing] = useState(false);
 
   const [lines, setLines] = useState<BudgetLine[]>([]);
+  /** % факт работ графика по шифру («5.13») — чтобы видеть закрытые работы с нулевым фактом. */
+  const [progressByCode, setProgressByCode] = useState<Map<string, number>>(new Map());
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [signedActsSum, setSignedActsSum] = useState(0);
   const [orderedSupplySum, setOrderedSupplySum] = useState(0);
@@ -140,17 +145,19 @@ export default function BudgetModule() {
   const loadObjectData = useCallback(async (id: string) => {
     if (!id) {
       setLines([]);
+      setProgressByCode(new Map());
       setPayments([]);
       setSignedActsSum(0);
       setOrderedSupplySum(0);
       return;
     }
     setLoadingData(true);
-    const [lineRes, payRes, actRes, supplyRes] = await Promise.all([
+    const [lineRes, payRes, actRes, supplyRes, taskRes] = await Promise.all([
       supabase.from("budget_lines").select("*").eq("object_id", id).order("created_at"),
       supabase.from("customer_payments").select("*").eq("object_id", id).order("payment_date", { ascending: false }),
       supabase.from("acceptance_acts").select("amount").eq("object_id", id).eq("status", "signed"),
       supabase.from("supply_requests").select("order_amount,status").eq("object_id", id).in("status", ["ordered", "delivered"]),
+      supabase.from("schedule_tasks").select("code,progress_fact").eq("object_id", id),
     ]);
     if (id !== objectIdRef.current) return;
     const missing = needsSchemaSetup(lineRes.error) || needsSchemaSetup(payRes.error);
@@ -159,6 +166,13 @@ export default function BudgetModule() {
     else if (payRes.error && !needsSchemaSetup(payRes.error)) setBanner(dbErrorText(payRes.error, "Не удалось загрузить платежи"));
 
     setLines((lineRes.data as BudgetLine[]) || []);
+    setProgressByCode(
+      new Map(
+        ((taskRes.data as { code: string | null; progress_fact: number | null }[]) || [])
+          .filter((t) => t.code)
+          .map((t) => [t.code as string, Number(t.progress_fact) || 0])
+      )
+    );
     setPayments((payRes.data as CustomerPayment[]) || []);
     setSignedActsSum(
       needsSchemaSetup(actRes.error)
@@ -263,18 +277,29 @@ export default function BudgetModule() {
       note: lineForm.note.trim() || null,
       updated_at: now,
     };
+    const old = editingLineId ? lines.find((x) => x.id === editingLineId) || null : null;
+    // Колонка появилась позже остальных: пишем её, только когда она уже есть в базе
+    // или отметку ставят впервые — тогда при её отсутствии откроется скрипт подготовки.
+    const withZero =
+      lineForm.zeroConfirmed || (old !== null && old.zero_fact_confirmed !== undefined)
+        ? { ...payload, zero_fact_confirmed: fact === 0 && lineForm.zeroConfirmed }
+        : payload;
 
     if (editingLineId) {
-      const old = lines.find((x) => x.id === editingLineId) || null;
       const parts: string[] = [];
       if (old?.section !== payload.section) parts.push(`Раздел: ${BUDGET_SECTION_LABEL[old!.section]} → ${BUDGET_SECTION_LABEL[payload.section]}`);
       if (old?.name !== payload.name) parts.push(`Название: ${old?.name} → ${payload.name}`);
       if (Number(old?.plan_amount) !== plan) parts.push(`План: ${fmtMoney(old?.plan_amount)} → ${fmtMoney(plan)}`);
       if (Number(old?.fact_amount) !== fact) parts.push(`Факт: ${fmtMoney(old?.fact_amount)} → ${fmtMoney(fact)}`);
+      if (!!old?.zero_fact_confirmed !== (fact === 0 && lineForm.zeroConfirmed))
+        parts.push(fact === 0 && lineForm.zeroConfirmed ? "Нулевой факт подтверждён" : "Подтверждение нулевого факта снято");
       if ((old?.forecast_amount ?? null) !== forecast) parts.push(`Прогноз: ${old?.forecast_amount != null ? fmtMoney(old.forecast_amount) : "авто"} → ${forecast != null ? fmtMoney(forecast) : "авто"}`);
       const history: HistoryEntry[] = [...(old?.history || []), { at: now, text: parts.length ? parts.join("; ") : "Статья сохранена без изменений" }];
-      const { error } = await supabase.from("budget_lines").update({ ...payload, history }).eq("id", editingLineId);
-      if (error) setBanner(dbErrorText(error, "Не удалось сохранить статью"));
+      const { error } = await supabase.from("budget_lines").update({ ...withZero, history }).eq("id", editingLineId);
+      if (error) {
+        setBanner(dbErrorText(error, "Не удалось сохранить статью"));
+        setSchemaMissing(needsSchemaSetup(error));
+      }
       else {
         closeLinePanel();
         await loadObjectData(objectId);
@@ -282,8 +307,11 @@ export default function BudgetModule() {
     } else {
       const { error } = await supabase
         .from("budget_lines")
-        .insert({ ...payload, created_at: now, history: [{ at: now, text: "Статья добавлена" }] });
-      if (error) setBanner(dbErrorText(error, "Не удалось добавить статью"));
+        .insert({ ...withZero, created_at: now, history: [{ at: now, text: "Статья добавлена" }] });
+      if (error) {
+        setBanner(dbErrorText(error, "Не удалось добавить статью"));
+        setSchemaMissing(needsSchemaSetup(error));
+      }
       else {
         closeLinePanel();
         await loadObjectData(objectId);
@@ -516,6 +544,7 @@ export default function BudgetModule() {
               <LinesTable
                 bySection={bySection}
                 visibleSections={visibleSections}
+                progressByCode={progressByCode}
                 detailId={lineDetailId}
                 setDetailId={setLineDetailId}
                 pendingDeleteId={linePendingDeleteId}
@@ -608,6 +637,23 @@ export default function BudgetModule() {
               <input type="number" min={0} value={lineForm.factAmount} onChange={(e) => setLineForm({ ...lineForm, factAmount: e.target.value })} />
             </div>
           </div>
+          {Number(lineForm.factAmount || 0) === 0 && (
+            <div className="field">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={lineForm.zeroConfirmed}
+                  onChange={(e) => setLineForm({ ...lineForm, zeroConfirmed: e.target.checked })}
+                />
+                Факт 0 ₽ подтверждён
+              </label>
+              <p className="hint">
+                Отметьте, если затрат действительно не было: давальческий материал, техника не понадобилась.
+                Тогда по закрытой работе план статьи уйдёт в экономию. Без отметки нулевой факт по закрытой
+                работе показывается как «факт не внесён».
+              </p>
+            </div>
+          )}
           <div className="field">
             <label>Прогноз, ₽</label>
             <input
@@ -685,6 +731,7 @@ export default function BudgetModule() {
 function LinesTable({
   bySection,
   visibleSections,
+  progressByCode,
   detailId,
   setDetailId,
   pendingDeleteId,
@@ -694,6 +741,7 @@ function LinesTable({
 }: {
   bySection: Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>;
   visibleSections: BudgetSection[];
+  progressByCode: Map<string, number>;
   detailId: string | null;
   setDetailId: (id: string | null) => void;
   pendingDeleteId: string | null;
@@ -779,17 +827,34 @@ function LinesTable({
     );
   }
 
+  // Закрыта ли работа графика, к которой относится статья: шифр в начале названия («4.6 …»).
+  const workClosed = (l: BudgetLine): boolean => {
+    const code = /^(\d+(?:\.\d+)*)\s/.exec(l.name)?.[1];
+    const progress = code ? progressByCode.get(code) : undefined;
+    return progress !== undefined && progress >= 100;
+  };
+  // Нулевой факт по закрытой работе без подтверждения — скорее незаполненное поле, чем экономия.
+  const isMissing = (l: BudgetLine): boolean =>
+    l.fact_amount <= 0 && l.plan_amount > 0 && workClosed(l) && !l.zero_fact_confirmed;
   // План − факт по статье: минус — перерасход, плюс — экономия. Статья без факта
-  // ещё не начата, и «экономией» её неизрасходованный план считать нельзя.
-  const devOf = (l: BudgetLine): number | null =>
-    l.fact_amount > 0 ? Math.round((l.plan_amount - l.fact_amount) * 100) / 100 : null;
+  // ещё не начата и в итоги не входит — кроме подтверждённого нуля по закрытой работе.
+  const devOf = (l: BudgetLine): number | null => {
+    if (l.fact_amount > 0) return Math.round((l.plan_amount - l.fact_amount) * 100) / 100;
+    if (l.zero_fact_confirmed && workClosed(l)) return Math.round(l.plan_amount * 100) / 100;
+    return null;
+  };
   const fmtDev = (d: number | null) =>
     d === null ? "не начато" : d === 0 ? "—" : `${d > 0 ? "+" : "−"}${fmtMoney(Math.abs(d))}`;
   const devClass = (d: number | null) => (d === null || d === 0 ? "" : d < 0 ? " is-neg" : " is-pos");
   let overrunSum = 0;
   let savingSum = 0;
+  let missingSum = 0;
   visibleSections.forEach((s) =>
     (bySection.get(s)?.lines || []).forEach((l) => {
+      if (isMissing(l)) {
+        missingSum += l.plan_amount;
+        return;
+      }
       const d = devOf(l);
       if (d === null) return;
       if (d < 0) overrunSum += -d;
@@ -798,6 +863,7 @@ function LinesTable({
   );
   overrunSum = Math.round(overrunSum * 100) / 100;
   savingSum = Math.round(savingSum * 100) / 100;
+  missingSum = Math.round(missingSum * 100) / 100;
   const netDev = Math.round((savingSum - overrunSum) * 100) / 100;
   const sectionDev = (ls: BudgetLine[]): number =>
     Math.round(ls.reduce((sum, l) => sum + (devOf(l) ?? 0), 0) * 100) / 100;
@@ -839,7 +905,16 @@ function LinesTable({
                             {fmtMoney(forecast)}
                             {l.forecast_amount == null && <span className="bud-auto">авто</span>}
                           </td>
-                          <td className={`mono${devClass(dev)}`}>{fmtDev(dev)}</td>
+                          {isMissing(l) ? (
+                            <td className="mono is-missing" title="Работа по графику закрыта, а факт 0 ₽. Внесите факт или отметьте в статье «Факт 0 ₽ подтверждён».">
+                              факт не внесён
+                            </td>
+                          ) : (
+                            <td className={`mono${devClass(dev)}`}>
+                              {fmtDev(dev)}
+                              {l.fact_amount <= 0 && dev !== null && <span className="bud-auto">0 ₽ подтв.</span>}
+                            </td>
+                          )}
                         </tr>
                         {detailId === l.id && (
                           <tr className="detail-row">
@@ -880,6 +955,13 @@ function LinesTable({
             <td colSpan={3} />
             <td className={`mono${devClass(netDev)}`}>{fmtDev(netDev)}</td>
           </tr>
+          {missingSum > 0 && (
+            <tr className="bud-total-row is-missing-row">
+              <td>Факт не внесён по закрытым работам — план статей, в разницу не входит</td>
+              <td colSpan={3} />
+              <td className="mono is-missing">{fmtMoney(missingSum)}</td>
+            </tr>
+          )}
         </tfoot>
       </table>
     </div>
