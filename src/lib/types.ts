@@ -354,14 +354,14 @@ export interface SupplyOffer {
 }
 
 export const MODULES = [
-  { key: "dashboard", label: "Дашборд", href: "/dashboard", ready: true },
   { key: "objects", label: "Объекты", href: "/objects", ready: true },
+  { key: "dashboard", label: "Дашборд", href: "/dashboard", ready: true },
   { key: "schedule", label: "График работ", href: "/schedule", ready: true },
   { key: "weekly", label: "Недельные задания", href: "/weekly", ready: true },
+  { key: "control", label: "Контроль стройки", href: "/control", ready: true },
+  { key: "budget", label: "Сметы и бюджет", href: "/budget", ready: true },
   { key: "pto", label: "ПТО и ИД", href: "/pto", ready: true },
   { key: "supply", label: "Снабжение", href: "/supply", ready: true },
-  { key: "budget", label: "Сметы и бюджет", href: "/budget", ready: true },
-  { key: "control", label: "Контроль стройки", href: "/control", ready: true },
   { key: "roles", label: "Роли и доступ", href: "#", ready: false },
 ] as const;
 
