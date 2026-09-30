@@ -1,14 +1,25 @@
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Закрытие работы «нулём»: на работу заложены деньги, а по её статьям бюджета
- * не потрачено ни рубля. Так бывает законно (давальческий материал), но чаще —
- * это незаполненный факт, поэтому закрыть такую работу можно только с комментарием.
+ * Фактическая стоимость работы ставится при её закрытии.
+ *
+ * Факт затрат живёт в «Сметах и бюджете»: статьи привязаны к работе шифром
+ * в начале названия. Закрыть работу можно, только когда её факт внесён; если
+ * затрат действительно не было (давальческий материал) — с комментарием.
  */
+
+export interface WorkBudgetLine {
+  id: string;
+  name: string;
+  plan_amount: number;
+  fact_amount: number;
+  history: { at: string; text: string }[];
+}
 
 export interface CostByWork {
   plan: number;
   fact: number;
+  lines: WorkBudgetLine[];
 }
 
 /** Шифр работы в начале названия статьи бюджета: «4.6 Армирование … — Арматура». */
@@ -16,39 +27,36 @@ export function workCodeOf(name: string): string | null {
   return /^(\d+(?:\.\d+)*)\s/.exec(name)?.[1] ?? null;
 }
 
-/** План и факт статей бюджета объекта, сложенные по шифру работы. */
+/** Статьи бюджета объекта, сгруппированные по шифру работы, с суммами плана и факта. */
 export async function loadCostByWork(objectId: string): Promise<Map<string, CostByWork>> {
   const out = new Map<string, CostByWork>();
   if (!objectId) return out;
   const { data, error } = await supabase
     .from("budget_lines")
-    .select("name,plan_amount,fact_amount")
-    .eq("object_id", objectId);
-  // Бюджета нет или он недоступен — правило просто не действует.
+    .select("id,name,plan_amount,fact_amount,history")
+    .eq("object_id", objectId)
+    .order("name");
+  // Бюджета нет или он недоступен — считаем, что статей у работ нет.
   if (error || !data) return out;
-  (data as { name: string; plan_amount: number; fact_amount: number }[]).forEach((l) => {
+  (data as WorkBudgetLine[]).forEach((l) => {
     const code = workCodeOf(l.name);
     if (!code) return;
-    const cur = out.get(code) || { plan: 0, fact: 0 };
+    const cur = out.get(code) || { plan: 0, fact: 0, lines: [] };
     cur.plan += Number(l.plan_amount) || 0;
     cur.fact += Number(l.fact_amount) || 0;
+    cur.lines.push(l);
     out.set(code, cur);
   });
   return out;
 }
 
-/**
- * Сколько заложено на работу, если закрыть её можно только с комментарием; иначе null.
- * Правило действует, только когда у работы есть статьи бюджета: без них факт неизвестен,
- * а не равен нулю.
- */
-export function zeroCostPlan(
-  code: string | null,
-  costTotal: number | null,
-  costs: Map<string, CostByWork>
-): number | null {
+/** Внесён ли факт затрат по работе: есть статьи и по ним потрачено больше нуля. */
+export function workFactEntered(code: string | null, costs: Map<string, CostByWork>): boolean {
   const c = code ? costs.get(code) : undefined;
-  if (!c) return null;
-  const plan = Math.max(c.plan, Number(costTotal) || 0);
-  return plan > 0 && c.fact <= 0 ? Math.round(plan * 100) / 100 : null;
+  return !!c && c.fact > 0;
+}
+
+/** Название статьи, которая заводится при закрытии работы без статей бюджета. */
+export function closingLineName(code: string | null, workName: string): string {
+  return `${code ? code + " " : ""}${workName} — факт при закрытии`;
 }
