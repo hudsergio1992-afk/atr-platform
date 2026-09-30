@@ -47,6 +47,7 @@ import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
 import { CostByWork, loadCostByWork, workFactEntered } from "@/lib/zeroCost";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -120,6 +121,7 @@ function diffText(old: WeeklyItem | null, form: FormState, taskName: (id: string
 }
 
 export default function WeeklyModule() {
+  const dbl = useDoubleTap();
   const today = useToday();
 
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
@@ -938,7 +940,7 @@ export default function WeeklyModule() {
     return (
       <Fragment key={item.id}>
         <div className={`wk-row${detailId === item.id ? " is-open" : ""}`}>
-          <div className="wk-c wk-c-name" onClick={() => setDetailId((c) => (c === item.id ? null : item.id))}>
+          <div className="wk-c wk-c-name" onClick={dbl(item.id, () => setDetailId((c) => (c === item.id ? null : item.id)))} title={DOUBLE_TAP_HINT}>
             <span className="wk-name-text">
               {item.name}
               {!item.task_id && (
@@ -1033,10 +1035,10 @@ export default function WeeklyModule() {
           >
             {fmtDeviation(deviation)}
           </div>
-          <div className="wk-c wk-c-status" onClick={() => setDetailId((c) => (c === item.id ? null : item.id))}>
+          <div className="wk-c wk-c-status" onClick={dbl(item.id, () => setDetailId((c) => (c === item.id ? null : item.id)))} title={DOUBLE_TAP_HINT}>
             <span className={`status-pill ${cls}`}>{d.done ? "Выполнено" : "В работе"}</span>
           </div>
-          <div className="wk-c wk-c-meta" onClick={() => setDetailId((c) => (c === item.id ? null : item.id))}>
+          <div className="wk-c wk-c-meta" onClick={dbl(item.id, () => setDetailId((c) => (c === item.id ? null : item.id)))} title={DOUBLE_TAP_HINT}>
             <span className="mono">
               план {item.volume_plan != null ? `${fmtNum(item.volume_plan, 3)} ${item.unit || ""}`.trim() : "—"}
             </span>
