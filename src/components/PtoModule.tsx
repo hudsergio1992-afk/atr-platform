@@ -24,6 +24,7 @@ import { fmtDate, fmtDateTime, fmtMoney, plural } from "@/lib/format";
 import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -847,6 +848,7 @@ function ActsView({
   setPendingDeleteActId: (id: string | null) => void;
   onDelete: (actId: string) => void;
 }) {
+  const dbl = useDoubleTap();
   return (
     <div>
       <div className="stats">
@@ -888,7 +890,7 @@ function ActsView({
             const overdue = !status || status !== "signed" ? (r.daysWaiting ?? 0) >= ACCEPTANCE_OVERDUE_DAYS : false;
             return (
               <li key={r.node.task.id} className="accept-item">
-                <div className="accept-row" onClick={() => (isOpen ? onClose() : onOpen(r))}>
+                <div className="accept-row" onClick={dbl(r.node.task.id, () => (isOpen ? onClose() : onOpen(r)))} title={DOUBLE_TAP_HINT}>
                   <div className="accept-main">
                     <div className="accept-name">{r.node.task.name}</div>
                     <div className="accept-sub">
@@ -1037,6 +1039,7 @@ function LogView({
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const dbl = useDoubleTap();
   function renderDetail(e: WorkLogEntry) {
     const history = (e.history || []).slice().reverse();
     return (
@@ -1127,7 +1130,7 @@ function LogView({
           <tbody>
             {entries.map((e) => (
               <Fragment key={e.id}>
-                <tr className="obj-row" onClick={() => setDetailId(detailId === e.id ? null : e.id)}>
+                <tr className="obj-row" onClick={dbl(e.id, () => setDetailId(detailId === e.id ? null : e.id))} title={DOUBLE_TAP_HINT}>
                   <td className="mono">{fmtDate(e.entry_date)}</td>
                   <td>{taskNameById(e.task_id)}</td>
                   <td>{e.crew || "—"}</td>
@@ -1146,7 +1149,7 @@ function LogView({
       </div>
       <div className="cards">
         {entries.map((e) => (
-          <div className="obj-card" key={e.id} onClick={() => setDetailId(detailId === e.id ? null : e.id)}>
+          <div className="obj-card" key={e.id} onClick={dbl(e.id, () => setDetailId(detailId === e.id ? null : e.id))} title={DOUBLE_TAP_HINT}>
             <div className="row1">
               <div>
                 <div className="cname">{fmtDate(e.entry_date)}</div>
@@ -1187,6 +1190,7 @@ function CertsView({
   onDelete: (id: string) => void;
   deliveryLabel: (id: string | null) => string;
 }) {
+  const dbl = useDoubleTap();
   function renderDetail(c: MaterialCertificate) {
     const history = (c.history || []).slice().reverse();
     return (
@@ -1280,7 +1284,7 @@ function CertsView({
           <tbody>
             {items.map((c) => (
               <Fragment key={c.id}>
-                <tr className="obj-row" onClick={() => setDetailId(detailId === c.id ? null : c.id)}>
+                <tr className="obj-row" onClick={dbl(c.id, () => setDetailId(detailId === c.id ? null : c.id))} title={DOUBLE_TAP_HINT}>
                   <td className="name-cell">{c.material_name}</td>
                   <td>{CERT_DOC_TYPE_LABEL[c.doc_type]}</td>
                   <td className="mono">{c.doc_number || "—"}</td>
@@ -1300,7 +1304,7 @@ function CertsView({
       </div>
       <div className="cards">
         {items.map((c) => (
-          <div className="obj-card" key={c.id} onClick={() => setDetailId(detailId === c.id ? null : c.id)}>
+          <div className="obj-card" key={c.id} onClick={dbl(c.id, () => setDetailId(detailId === c.id ? null : c.id))} title={DOUBLE_TAP_HINT}>
             <div className="row1">
               <div>
                 <div className="cname">{c.material_name}</div>
