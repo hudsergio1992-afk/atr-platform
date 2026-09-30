@@ -52,6 +52,7 @@ import {
 } from "@/lib/stages";
 import { loadCatalogStages, saveCatalogStage } from "@/lib/stageCatalog";
 import SchemaSetup from "@/components/SchemaSetup";
+import CurrentObject from "@/components/CurrentObject";
 import ScheduleImport from "@/components/ScheduleImport";
 
 type ViewMode = "tree" | "table" | "gantt";
@@ -473,14 +474,6 @@ export default function ScheduleModule() {
     flattenTree(tree).forEach((n) => m.set(n.task.id, n));
     return m;
   }, [tree]);
-
-  function changeObject(id: string) {
-    setObjectId(id);
-    setDetailId(null);
-    setPendingDeleteId(null);
-    setCollapsed(null);
-    writeSetting(LS_OBJECT_KEY, id);
-  }
 
   function changeView(v: ViewMode) {
     setViewOverride(v);
@@ -1290,21 +1283,7 @@ export default function ScheduleModule() {
       )}
 
       <div className="obj-picker">
-        <label htmlFor="sch-object">Объект</label>
-        <select
-          id="sch-object"
-          className="filter"
-          value={objectId}
-          onChange={(e) => changeObject(e.target.value)}
-          disabled={loadingObjects || objects.length === 0}
-        >
-          {objects.length === 0 && <option value="">{loadingObjects ? "Загрузка…" : "Объектов нет"}</option>}
-          {objects.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
+        <CurrentObject name={objects.find((o) => o.id === objectId)?.name ?? null} loading={loadingObjects} />
         {currentObject && (
           <span className="obj-picker-meta mono">
             {fmtRange(currentObject.start_date, currentObject.end_date_planned)}
