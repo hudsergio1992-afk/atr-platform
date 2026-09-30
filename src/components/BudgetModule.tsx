@@ -22,6 +22,7 @@ import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
 import { workCodeOf } from "@/lib/zeroCost";
 import { LineRules, makeLineRules } from "@/lib/finance";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -793,6 +794,7 @@ function LinesTable({
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const dbl = useDoubleTap();
   function renderDetail(l: BudgetLine) {
     const history = (l.history || []).slice().reverse();
     const forecast = rules.forecast(l);
@@ -930,7 +932,7 @@ function LinesTable({
     const dev = devOf(l);
     return (
       <Fragment key={l.id}>
-        <tr className="obj-row" onClick={() => setDetailId(detailId === l.id ? null : l.id)}>
+        <tr className="obj-row" onClick={dbl(l.id, () => setDetailId(detailId === l.id ? null : l.id))} title={DOUBLE_TAP_HINT}>
           <td className="name-cell">
             {withSection && <span className={`bud-sect-tag sect-${l.section}`}>{BUDGET_SECTION_LABEL[l.section]}</span>}
             {l.name}
@@ -1121,6 +1123,7 @@ function PaymentsTable({
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const dbl = useDoubleTap();
   function renderDetail(p: CustomerPayment) {
     const history = (p.history || []).slice().reverse();
     return (
@@ -1208,7 +1211,7 @@ function PaymentsTable({
           <tbody>
             {items.map((p) => (
               <Fragment key={p.id}>
-                <tr className="obj-row" onClick={() => setDetailId(detailId === p.id ? null : p.id)}>
+                <tr className="obj-row" onClick={dbl(p.id, () => setDetailId(detailId === p.id ? null : p.id))} title={DOUBLE_TAP_HINT}>
                   <td className="mono">{fmtDate(p.payment_date)}</td>
                   <td className="mono">{fmtMoney(p.amount)}</td>
                   <td>{p.document || "—"}</td>
@@ -1226,7 +1229,7 @@ function PaymentsTable({
       </div>
       <div className="cards">
         {items.map((p) => (
-          <div className="obj-card" key={p.id} onClick={() => setDetailId(detailId === p.id ? null : p.id)}>
+          <div className="obj-card" key={p.id} onClick={dbl(p.id, () => setDetailId(detailId === p.id ? null : p.id))} title={DOUBLE_TAP_HINT}>
             <div className="row1">
               <div>
                 <div className="cname">{fmtMoney(p.amount)}</div>
