@@ -53,7 +53,7 @@ import {
 import { loadCatalogStages, saveCatalogStage } from "@/lib/stageCatalog";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
-import { CostByWork, loadCostByWork, zeroCostPlan } from "@/lib/zeroCost";
+import { closingLineName, CostByWork, loadCostByWork } from "@/lib/zeroCost";
 import ScheduleImport from "@/components/ScheduleImport";
 
 type ViewMode = "tree" | "table" | "gantt";
@@ -234,6 +234,10 @@ export default function ScheduleModule() {
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
   /** План и факт статей бюджета по шифру работы — для правила «закрытие без затрат». */
   const [costByWork, setCostByWork] = useState<Map<string, CostByWork>>(new Map());
+  /** Факт по статьям бюджета, введённый при закрытии работы: id статьи → сумма. */
+  const [closeFacts, setCloseFacts] = useState<Record<string, string>>({});
+  /** Фактическая стоимость одной суммой — когда у закрываемой работы нет статей бюджета. */
+  const [closeNewFact, setCloseNewFact] = useState("");
   const [loadingObjects, setLoadingObjects] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
@@ -578,6 +582,8 @@ export default function ScheduleModule() {
   function openPanel(id: string | null, presetParent?: string) {
     setTrackingTouched(false);
     setOrderTouched(false);
+    setCloseFacts({});
+    setCloseNewFact("");
     setEditingId(id);
     const t = id ? tasks.find((x) => x.id === id) || null : null;
     if (t) {
@@ -648,17 +654,28 @@ export default function ScheduleModule() {
   const editingIsGroup = !!editingNode?.isGroup;
 
   /**
-   * Работу закрывают (было меньше 100%, стало 100%), а на неё заложены деньги и
-   * факт затрат по её статьям бюджета 0 ₽ — тогда без комментария не сохранить.
+   * Работу закрывают (было меньше 100%, стало 100%): при закрытии обязательно
+   * ставится фактическая стоимость — в статьи бюджета этой работы или, если
+   * статей нет, одной суммой (заведётся статья «… — факт при закрытии»).
    */
-  const zeroClosePlan = useMemo(() => {
+  const closing = useMemo(() => {
     if (!editingId || editingIsGroup) return null;
     const old = tasks.find((t) => t.id === editingId);
     if (!old || Number(old.progress_fact) >= 100) return null;
     if (Number(form.progressFact || 0) < 100) return null;
-    const cost = form.costTotal === "" ? null : Number(form.costTotal);
-    return zeroCostPlan(old.code, cost, costByWork);
-  }, [editingId, editingIsGroup, tasks, form.progressFact, form.costTotal, costByWork]);
+    const budget = old.code ? costByWork.get(old.code) : undefined;
+    return { task: old, lines: budget?.lines || [], plan: budget?.plan || 0 };
+  }, [editingId, editingIsGroup, tasks, form.progressFact, costByWork]);
+
+  /** Факт по строке бюджета при закрытии: введённое значение или уже внесённое. */
+  const closeFactOf = (id: string, current: number) =>
+    closeFacts[id] !== undefined ? closeFacts[id] : current ? String(current) : "";
+  const closingTotal = useMemo(() => {
+    if (!closing) return 0;
+    if (!closing.lines.length) return Number(closeNewFact || 0) || 0;
+    return closing.lines.reduce((sum, l) => sum + (Number(closeFactOf(l.id, Number(l.fact_amount))) || 0), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeFactOf зависит только от closeFacts
+  }, [closing, closeFacts, closeNewFact]);
 
   /** Живой пересчёт производных прямо в форме, до сохранения. */
   const formPreview = useMemo(() => {
@@ -813,6 +830,47 @@ export default function ScheduleModule() {
     await loadTasks(objectId);
   }
 
+  /** Записывает фактическую стоимость закрытой работы в «Сметы и бюджет». Возвращает текст ошибки или null. */
+  async function saveClosingFact(
+    c: { task: ScheduleTask; lines: CostByWork["lines"]; plan: number },
+    now: string
+  ): Promise<string | null> {
+    if (c.lines.length) {
+      for (const l of c.lines) {
+        const next = Number(closeFactOf(l.id, Number(l.fact_amount)) || 0);
+        if (next === Number(l.fact_amount)) continue;
+        const { error } = await supabase
+          .from("budget_lines")
+          .update({
+            fact_amount: next,
+            updated_at: now,
+            history: [
+              ...(l.history || []),
+              { at: now, text: `Факт при закрытии работы: ${fmtMoney(l.fact_amount)} → ${fmtMoney(next)}` },
+            ],
+          })
+          .eq("id", l.id);
+        if (error) return dbErrorText(error, "Работа закрыта, но факт в «Сметах и бюджете» не записан");
+      }
+      return null;
+    }
+    const value = Number(closeNewFact || 0);
+    if (!(value > 0)) return null;
+    const { error } = await supabase.from("budget_lines").insert({
+      object_id: objectId,
+      section: "works",
+      name: closingLineName(c.task.code, c.task.name),
+      plan_amount: Number(c.task.cost_total) || 0,
+      fact_amount: value,
+      forecast_amount: null,
+      note: "Заведена при закрытии работы в «Графике работ»",
+      created_at: now,
+      updated_at: now,
+      history: [{ at: now, text: `Статья заведена при закрытии работы, факт ${fmtMoney(value)}` }],
+    });
+    return error ? dbErrorText(error, "Работа закрыта, но факт в «Сметах и бюджете» не записан") : null;
+  }
+
   async function handleSave() {
     if (!objectId) {
       setBanner("Сначала выберите объект.");
@@ -857,11 +915,22 @@ export default function ScheduleModule() {
       setBanner("У непредвиденной работы укажите основание — через полгода никто не вспомнит, откуда она взялась.");
       return;
     }
-    if (zeroClosePlan !== null && !form.closeComment.trim()) {
-      setBanner(
-        `На работу заложено ${fmtMoney(zeroClosePlan)}, а факт затрат по ней 0 ₽. Закрыть её можно только с комментарием — почему затрат не было.`
-      );
-      return;
+    if (closing) {
+      if (!closing.lines.length && closeNewFact.trim() === "") {
+        setBanner("Работа закрывается — укажите её фактическую стоимость. Если затрат не было, впишите 0 и объясните почему.");
+        return;
+      }
+      const facts = closing.lines.length
+        ? closing.lines.map((l) => closeFactOf(l.id, Number(l.fact_amount)))
+        : [closeNewFact];
+      if (facts.some((v) => v !== "" && (!Number.isFinite(Number(v)) || Number(v) < 0))) {
+        setBanner("Фактическая стоимость — неотрицательное число.");
+        return;
+      }
+      if (closingTotal <= 0 && !form.closeComment.trim()) {
+        setBanner("Фактическая стоимость работы 0 ₽ — закрыть её можно только с комментарием, почему затрат не было.");
+        return;
+      }
     }
 
     setBanner(null);
@@ -904,6 +973,14 @@ export default function ScheduleModule() {
       const change = diffText(old, form, nameById);
       const history: HistoryEntry[] = old?.history ? [...old.history] : [];
       history.push({ at: now, text: change || "Данные сохранены без изменений" });
+      if (closing) {
+        history.push({
+          at: now,
+          text: `Работа закрыта, фактическая стоимость ${fmtMoney(closingTotal)}${
+            closing.plan > 0 ? ` при плане ${fmtMoney(closing.plan)}` : ""
+          }`,
+        });
+      }
       const { error } = await supabase
         .from("schedule_tasks")
         .update({ ...payload, history })
@@ -912,9 +989,11 @@ export default function ScheduleModule() {
         setBanner(dbErrorText(error, "Не удалось сохранить этап"));
         setSchemaMissing(needsSchemaSetup(error));
       } else {
+        const budgetError = closing ? await saveClosingFact(closing, now) : null;
         await applyRenumber(renumber);
         closePanel();
         await loadTasks(objectId);
+        if (budgetError) setBanner(budgetError);
       }
     } else {
       const history: HistoryEntry[] = [{ at: now, text: "Этап создан" }];
@@ -2014,20 +2093,62 @@ export default function ScheduleModule() {
             впишете объём — пересчитается процент. Если объём работы не задан, готовность
             отмечается только процентом.
           </p>
-          {zeroClosePlan !== null && (
+          {closing && (
             <div className="field zero-close">
               <label>
-                Почему работа закрывается без затрат <span className="req">*</span>
+                Фактическая стоимость работы <span className="req">*</span>
               </label>
-              <textarea
-                placeholder="напр. материал давальческий, техника не понадобилась; или факт ещё не внесён — внести до …"
-                value={form.closeComment}
-                onChange={(e) => setForm({ ...form, closeComment: e.target.value })}
-              />
+              {closing.lines.length ? (
+                <div className="close-lines">
+                  {closing.lines.map((l) => (
+                    <div className="close-line" key={l.id}>
+                      <span className="close-line-name" title={l.name}>
+                        {l.name.split(" — ").slice(1).join(" — ") || l.name}
+                      </span>
+                      <span className="close-line-plan mono">план {fmtMoney(l.plan_amount)}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="факт, ₽"
+                        value={closeFactOf(l.id, Number(l.fact_amount))}
+                        onChange={(e) => setCloseFacts({ ...closeFacts, [l.id]: e.target.value })}
+                      />
+                    </div>
+                  ))}
+                  <div className="close-line is-total">
+                    <span className="close-line-name">Итого по работе</span>
+                    <span className="close-line-plan mono">план {fmtMoney(closing.plan)}</span>
+                    <span className="mono">{fmtMoney(closingTotal)}</span>
+                  </div>
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="сколько фактически стоила работа, ₽"
+                  value={closeNewFact}
+                  onChange={(e) => setCloseNewFact(e.target.value)}
+                />
+              )}
               <p className="hint">
-                На работу заложено {fmtMoney(zeroClosePlan)}, а по её статьям в «Сметах и бюджете» потрачено 0 ₽.
-                Без комментария закрыть нельзя; комментарий попадёт в историю работы.
+                {closing.lines.length
+                  ? "Факт по статьям работы запишется в «Сметы и бюджет»."
+                  : "У работы нет статей в «Сметах и бюджете» — заведётся статья «… — факт при закрытии» с этой суммой."}
               </p>
+              {closingTotal <= 0 && (
+                <>
+                  <label>
+                    Почему затрат не было <span className="req">*</span>
+                  </label>
+                  <textarea
+                    placeholder="напр. материал давальческий, техника не понадобилась"
+                    value={form.closeComment}
+                    onChange={(e) => setForm({ ...form, closeComment: e.target.value })}
+                  />
+                </>
+              )}
             </div>
           )}
 
