@@ -859,3 +859,6 @@ td.is-missing { color: var(--st-warn-ink); font-weight: 600; }
 /* ---- Закрытие работы без затрат: обязательный комментарий ---- */
 .field.zero-close { border-left: 3px solid var(--st-warn-ink); padding-left: 10px; }
 .field.zero-close label { color: var(--st-warn-ink); }
+
+/* ---- Шифр работы в графике: «5.13» перед названием, как в бюджете ---- */
+.sch-code { color: var(--muted); font-size: 11.5px; flex-shrink: 0; margin-right: 6px; }
