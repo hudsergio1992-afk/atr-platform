@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OBJECT_KEY, readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
 import { supabase } from "@/lib/supabaseClient";
 import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
@@ -518,6 +518,20 @@ export default function ScheduleModule() {
   function toggleDetail(id: string) {
     setDetailId((cur) => (cur === id ? null : id));
     setPendingDeleteId(null);
+  }
+
+  // Подробности этапа открываются двойным нажатием — одиночное нажатие при просмотре их не раскрывает.
+  // Своя проверка вместо dblclick: на телефоне двойной тап надёжно ловится только так.
+  const lastTapRef = useRef<{ id: string; at: number } | null>(null);
+  function onRowTap(id: string, now: number) {
+    const prev = lastTapRef.current;
+    if (prev && prev.id === id && now - prev.at < 400) {
+      lastTapRef.current = null;
+      window.getSelection()?.removeAllRanges();
+      toggleDetail(id);
+    } else {
+      lastTapRef.current = { id, at: now };
+    }
   }
 
   /** Объём, отвечающий текущему проценту готовности. Считается, не хранится. */
@@ -1223,7 +1237,8 @@ export default function ScheduleModule() {
           className={`sch-row${n.isGroup ? " is-group" : ""}${
             detailId === n.task.id ? " is-open" : ""
           }`}
-          onClick={() => toggleDetail(n.task.id)}
+          onClick={(e) => onRowTap(n.task.id, e.timeStamp)}
+          title="Двойное нажатие — подробности"
         >
           <div
             className="sch-c sch-c-name"
