@@ -325,7 +325,7 @@ tr.detail-row td { padding: 0; }
     background: none; border: none; text-align: left; cursor: pointer; font-family: inherit;
 }
 .sch-head.is-sortable .sch-c:hover { color: var(--ink); }
-.sch-row { border-top: 1px solid var(--border); cursor: pointer; }
+.sch-row { border-top: 1px solid var(--border); cursor: pointer; touch-action: manipulation; }
 .sch-row:first-of-type { border-top: none; }
 .sch-row:hover { background: var(--surface-2); }
 .sch-row.is-open { background: var(--surface-2); }
