@@ -854,6 +854,8 @@ td.risk-reasons { color: var(--muted); font-size: 12.5px; max-width: 260px; }
 /* ---- Бюджет: закрытая работа с нулевым фактом без подтверждения ---- */
 td.is-missing { color: var(--st-warn-ink); font-weight: 600; }
 .bud-total-row.is-missing-row td { color: var(--st-warn-ink); }
+td.is-deferred { color: var(--muted); font-weight: 500; }
+.bud-total-row.is-deferred-row td { color: var(--muted); font-weight: 500; }
 .check-row { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
 
 /* ---- Закрытие работы без затрат: обязательный комментарий ---- */
