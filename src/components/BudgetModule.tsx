@@ -8,7 +8,6 @@ import {
   BUDGET_SECTIONS,
   BudgetLine,
   BudgetSection,
-  budgetForecast,
   ConstructionObject,
   CustomerPayment,
   HistoryEntry,
@@ -22,6 +21,7 @@ const LS_ORDER_KEY = "atr.budget.order";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
 import { workCodeOf } from "@/lib/zeroCost";
+import { LineRules, makeLineRules } from "@/lib/finance";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -213,6 +213,10 @@ export default function BudgetModule() {
 
   /* ------------------------------ Производные суммы ------------------------------ */
 
+  // Одно правило с дашбордом: экономия — по закрытым работам, перерасход — сразу, накладные — после сдачи объекта.
+  const objectDone = objects.find((o) => o.id === objectId)?.status === "done";
+  const rules = useMemo(() => makeLineRules(progressByCode, workNames, objectDone), [progressByCode, workNames, objectDone]);
+
   const bySection = useMemo(() => {
     const m = new Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>();
     BUDGET_SECTIONS.forEach((s) => m.set(s, { plan: 0, fact: 0, forecast: 0, lines: [] }));
@@ -221,11 +225,11 @@ export default function BudgetModule() {
       if (!cur) return;
       cur.plan += l.plan_amount;
       cur.fact += l.fact_amount;
-      cur.forecast += budgetForecast(l);
+      cur.forecast += rules.forecast(l);
       cur.lines.push(l);
     });
     return m;
-  }, [lines]);
+  }, [lines, rules]);
 
   const totals = useMemo(() => {
     let plan = 0,
@@ -577,10 +581,9 @@ export default function BudgetModule() {
               <LinesTable
                 bySection={bySection}
                 visibleSections={visibleSections}
-                progressByCode={progressByCode}
                 linesOrder={linesOrder}
                 workNames={workNames}
-                objectDone={selectedObject?.status === "done"}
+                rules={rules}
                 detailId={lineDetailId}
                 setDetailId={setLineDetailId}
                 pendingDeleteId={linePendingDeleteId}
@@ -767,10 +770,9 @@ export default function BudgetModule() {
 function LinesTable({
   bySection,
   visibleSections,
-  progressByCode,
   linesOrder,
   workNames,
-  objectDone,
+  rules,
   detailId,
   setDetailId,
   pendingDeleteId,
@@ -780,11 +782,10 @@ function LinesTable({
 }: {
   bySection: Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>;
   visibleSections: BudgetSection[];
-  progressByCode: Map<string, number>;
   linesOrder: LinesOrder;
   workNames: Map<string, string>;
-  /** Объект завершён — только тогда экономия/перерасход по накладным входят в итоги. */
-  objectDone: boolean;
+  /** Как статья входит в экономию/перерасход и прогноз — общее правило с дашбордом. */
+  rules: LineRules;
   detailId: string | null;
   setDetailId: (id: string | null) => void;
   pendingDeleteId: string | null;
@@ -794,7 +795,7 @@ function LinesTable({
 }) {
   function renderDetail(l: BudgetLine) {
     const history = (l.history || []).slice().reverse();
-    const forecast = budgetForecast(l);
+    const forecast = rules.forecast(l);
     return (
       <div className="detail">
         <div className="detail-block">
@@ -870,33 +871,15 @@ function LinesTable({
     );
   }
 
-  // Закрыта ли работа графика, к которой относится статья: шифр в начале названия («4.6 …»).
-  const workClosed = (l: BudgetLine): boolean => {
-    const code = /^(\d+(?:\.\d+)*)\s/.exec(l.name)?.[1];
-    const progress = code ? progressByCode.get(code) : undefined;
-    return progress !== undefined && progress >= 100;
-  };
-  // Нулевой факт по закрытой работе без подтверждения — скорее незаполненное поле, чем экономия.
-  const isMissing = (l: BudgetLine): boolean =>
-    l.fact_amount <= 0 && l.plan_amount > 0 && workClosed(l) && !l.zero_fact_confirmed;
-  // План − факт по статье: минус — перерасход, плюс — экономия. Статья без факта
-  // ещё не начата и в итоги не входит — кроме подтверждённого нуля по закрытой работе.
-  const devOf = (l: BudgetLine): number | null => {
-    if (l.fact_amount > 0) return Math.round((l.plan_amount - l.fact_amount) * 100) / 100;
-    if (l.zero_fact_confirmed && workClosed(l)) return Math.round(l.plan_amount * 100) / 100;
-    return null;
-  };
-  // Накладные (питание, проживание, командировочные, транспорт) — статьи этапа графика, в названии
-  // которого есть «накладн». Их факт идёт в общий факт, а экономия/перерасход — только после
-  // завершения объекта: до этого расход по накладным не окончателен.
-  const isOverhead = (l: BudgetLine): boolean => {
-    const stage = workCodeOf(l.name)?.split(".")[0];
-    const stageName = stage ? workNames.get(stage) || "" : "";
-    return /накладн/i.test(stageName) || /накладн/i.test(l.name);
-  };
-  const isDeferred = (l: BudgetLine): boolean => !objectDone && isOverhead(l);
-  /** Отклонение, которое входит в итоги: у накладных до завершения объекта — не входит. */
-  const countedDev = (l: BudgetLine): number | null => (isDeferred(l) ? null : devOf(l));
+  // Классификация статей — общее правило с дашбордом (src/lib/finance.ts):
+  // экономия — только по закрытым работам; по незакрытым «план − факт» — остаток, а не экономия;
+  // перерасход считается сразу; накладные — после завершения объекта.
+  const isMissing = (l: BudgetLine): boolean => rules.kind(l) === "missing";
+  const isDeferred = (l: BudgetLine): boolean => rules.kind(l) === "deferred";
+  const isRemainder = (l: BudgetLine): boolean => rules.kind(l) === "remainder";
+  const devOf = (l: BudgetLine): number | null => rules.dev(l);
+  /** Отклонение, которое входит в итоги. */
+  const countedDev = (l: BudgetLine): number | null => (rules.kind(l) === "counted" ? rules.dev(l) : null);
   const fmtDev = (d: number | null) =>
     d === null ? "не начато" : d === 0 ? "—" : `${d > 0 ? "+" : "−"}${fmtMoney(Math.abs(d))}`;
   const devClass = (d: number | null) => (d === null || d === 0 ? "" : d < 0 ? " is-neg" : " is-pos");
@@ -905,6 +888,8 @@ function LinesTable({
   let missingSum = 0;
   let deferredDev = 0;
   let deferredCount = 0;
+  let remainderSum = 0;
+  let remainderCount = 0;
   visibleSections.forEach((s) =>
     (bySection.get(s)?.lines || []).forEach((l) => {
       if (isMissing(l)) {
@@ -919,7 +904,12 @@ function LinesTable({
         }
         return;
       }
-      const d = devOf(l);
+      if (isRemainder(l)) {
+        remainderSum += devOf(l) ?? 0;
+        remainderCount += 1;
+        return;
+      }
+      const d = countedDev(l);
       if (d === null) return;
       if (d < 0) overrunSum += -d;
       else savingSum += d;
@@ -929,13 +919,14 @@ function LinesTable({
   savingSum = Math.round(savingSum * 100) / 100;
   missingSum = Math.round(missingSum * 100) / 100;
   deferredDev = Math.round(deferredDev * 100) / 100;
+  remainderSum = Math.round(remainderSum * 100) / 100;
   const netDev = Math.round((savingSum - overrunSum) * 100) / 100;
   const sectionDev = (ls: BudgetLine[]): number =>
     Math.round(ls.reduce((sum, l) => sum + (countedDev(l) ?? 0), 0) * 100) / 100;
 
   /** Строка статьи; в порядке «как в графике» у названия — метка раздела затрат. */
   const renderRow = (l: BudgetLine, withSection: boolean) => {
-    const forecast = budgetForecast(l);
+    const forecast = rules.forecast(l);
     const dev = devOf(l);
     return (
       <Fragment key={l.id}>
@@ -953,6 +944,14 @@ function LinesTable({
           {isMissing(l) ? (
             <td className="mono is-missing" title="Работа по графику закрыта, а факт 0 ₽. Внесите факт или отметьте в статье «Факт 0 ₽ подтверждён».">
               факт не внесён
+            </td>
+          ) : isRemainder(l) ? (
+            <td
+              className="mono is-deferred"
+              title="Работа по графику не закрыта: «план − факт» — неизрасходованный остаток, а не экономия. Станет экономией после закрытия работы."
+            >
+              {fmtDev(dev)}
+              <span className="bud-auto">остаток, работа не закрыта</span>
             </td>
           ) : isDeferred(l) ? (
             <td
@@ -1004,7 +1003,7 @@ function LinesTable({
             <th>План</th>
             <th>Факт</th>
             <th>Прогноз</th>
-            <th title="Минус — перерасход, плюс — экономия. Статьи без факта не учитываются, накладные — только после завершения объекта.">План − факт</th>
+            <th title="Минус — перерасход (считается сразу), плюс — экономия (только по закрытым работам). По незакрытым работам плюс — остаток, накладные — после завершения объекта.">План − факт</th>
           </tr>
         </thead>
         <tbody>
@@ -1023,7 +1022,7 @@ function LinesTable({
                   <td>Подытог</td>
                   <td className="mono">{fmtMoney(sum((l) => l.plan_amount))}</td>
                   <td className="mono">{fmtMoney(sum((l) => l.fact_amount))}</td>
-                  <td className="mono">{fmtMoney(sum((l) => budgetForecast(l)))}</td>
+                  <td className="mono">{fmtMoney(sum((l) => rules.forecast(l)))}</td>
                   <td className={`mono${devClass(sectionDev(g.lines))}`}>{fmtDev(sectionDev(g.lines))}</td>
                 </tr>
               </Fragment>
@@ -1072,6 +1071,16 @@ function LinesTable({
             <td colSpan={3} />
             <td className={`mono${devClass(netDev)}`}>{fmtDev(netDev)}</td>
           </tr>
+          {remainderCount > 0 && (
+            <tr className="bud-total-row is-deferred-row">
+              <td>
+                Остаток по незакрытым работам ({remainderCount}) — не экономия: станет ею или уйдёт в расход после закрытия
+                работ, в разницу не входит
+              </td>
+              <td colSpan={3} />
+              <td className="mono is-deferred">{fmtDev(remainderSum)}</td>
+            </tr>
+          )}
           {deferredCount > 0 && (
             <tr className="bud-total-row is-deferred-row">
               <td>
