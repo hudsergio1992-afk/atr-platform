@@ -14,6 +14,7 @@ import {
   TYPE_LABEL,
 } from "@/lib/types";
 import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 interface FormState {
   name: string;
@@ -97,6 +98,7 @@ function diffText(old: ConstructionObject | null, form: FormState): string {
 }
 
 export default function ObjectsModule() {
+  const dbl = useDoubleTap();
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
@@ -395,7 +397,7 @@ export default function ObjectsModule() {
             ) : (
               filtered.map((o) => (
                 <Fragment key={o.id}>
-                  <tr className="obj-row" onClick={() => toggleRow(o.id)}>
+                  <tr className="obj-row" onClick={dbl(o.id, () => toggleRow(o.id))} title={DOUBLE_TAP_HINT}>
                     <td className="name-cell">{o.name}</td>
                     <td className="addr-cell">{o.address}</td>
                     <td>{TYPE_LABEL[o.type] || o.type}</td>
@@ -433,7 +435,7 @@ export default function ObjectsModule() {
           </div>
         ) : (
           filtered.map((o) => (
-            <div className="obj-card" key={o.id} onClick={() => toggleRow(o.id)}>
+            <div className="obj-card" key={o.id} onClick={dbl(o.id, () => toggleRow(o.id))} title={DOUBLE_TAP_HINT}>
               <div className="row1">
                 <div>
                   <div className="cname">{o.name}</div>
