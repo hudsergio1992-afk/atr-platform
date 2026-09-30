@@ -18,8 +18,9 @@ import {
 import { buildTree, flattenTree, parseDay } from "@/lib/schedule";
 import { computeSupplierStats, summarizeRequests } from "@/lib/supply";
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum, fmtPercent, plural } from "@/lib/format";
-import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
+import CurrentObject from "@/components/CurrentObject";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -262,13 +263,6 @@ export default function SupplyModule() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- состояние ставится после await, не синхронно
     loadData(objectId);
   }, [objectId, loadingObjects, loadData]);
-
-  function changeObject(id: string) {
-    setObjectId(id);
-    setDetailId(null);
-    setPendingDeleteId(null);
-    writeSetting(LS_OBJECT_KEY, id);
-  }
 
   const leaves = useMemo(
     () => (today ? flattenTree(buildTree(tasks, today)).filter((n) => !n.isGroup) : []),
@@ -1197,22 +1191,7 @@ export default function SupplyModule() {
       {schemaMissing && <SchemaSetup onRecheck={() => loadData(objectId)} />}
 
       <div className="obj-picker">
-        <label htmlFor="supply-object">Объект</label>
-        <select
-          id="supply-object"
-          className="filter"
-          value={objectId}
-          onChange={(e) => changeObject(e.target.value)}
-          disabled={loadingObjects || objects.length === 0 || view === "suppliers"}
-          title={view === "suppliers" ? "База поставщиков общая для всех объектов" : undefined}
-        >
-          {objects.length === 0 && <option value="">{loadingObjects ? "Загрузка…" : "Объектов нет"}</option>}
-          {objects.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
+        <CurrentObject name={objects.find((o) => o.id === objectId)?.name ?? null} loading={loadingObjects} />
         {selectedObject && view === "requests" && <span className="obj-picker-meta">{selectedObject.address}</span>}
         {view === "suppliers" && <span className="obj-picker-meta">база поставщиков общая для всех объектов</span>}
       </div>
