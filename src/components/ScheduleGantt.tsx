@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { SCHEDULE_STATUS_CLASS, SCHEDULE_STATUS_LABEL } from "@/lib/types";
 import { dayToISO, parseDay, TaskNode } from "@/lib/schedule";
 import { fmtDate, fmtPercent } from "@/lib/format";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 export type GanttScale = "day" | "week" | "month";
 
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }: Props) {
+  const dbl = useDoubleTap();
   const model = useMemo(() => {
     const starts: number[] = [];
     const ends: number[] = [];
@@ -168,7 +170,7 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
             key={r.task.id}
             className={`gantt-name${r.isGroup ? " is-group" : ""}${selectedId === r.task.id ? " is-sel" : ""}`}
             style={{ paddingLeft: 10 + r.level * 14 }}
-            onClick={() => onPick(r.task.id)}
+            onClick={dbl(r.task.id, () => onPick(r.task.id))}
             title={r.task.code ? `${r.task.code} ${r.task.name}` : r.task.name}
           >
             {r.task.code && <span className="sch-code mono">{r.task.code}</span>}
@@ -225,7 +227,8 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
                 <div
                   key={r.task.id}
                   className={`gantt-row${selectedId === r.task.id ? " is-sel" : ""}`}
-                  onClick={() => onPick(r.task.id)}
+                  onClick={dbl(r.task.id, () => onPick(r.task.id))}
+                  title={DOUBLE_TAP_HINT}
                 >
                   {plan && (
                     <div
