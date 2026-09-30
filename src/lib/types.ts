@@ -389,6 +389,8 @@ export interface BudgetLine {
   /** null — прогноз считается автоматически. */
   forecast_amount: number | null;
   note: string | null;
+  /** Нулевой факт подтверждён: по закрытой работе статья считается экономией, а не «факт не внесён». */
+  zero_fact_confirmed?: boolean;
   history: HistoryEntry[];
   created_at: string;
   updated_at: string;
