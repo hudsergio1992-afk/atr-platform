@@ -385,7 +385,9 @@ export default function ScheduleModule() {
   const matches = useCallback(
     (n: TaskNode) => {
       const q = search.trim().toLowerCase();
-      if (q && n.task.name.toLowerCase().indexOf(q) === -1) return false;
+      // Искать можно и по шифру («5.13»), и по названию — как в «Сметах и бюджете».
+      const hay = `${n.task.code ? n.task.code + " " : ""}${n.task.name}`.toLowerCase();
+      if (q && hay.indexOf(q) === -1) return false;
       if (filterStatus && n.status !== filterStatus) return false;
       if (filterKind && (n.task.kind === "extra" ? "extra" : "plan") !== filterKind) return false;
       return true;
@@ -639,7 +641,7 @@ export default function ScheduleModule() {
     }
     return flattenTree(tree)
       .filter((n) => !banned.has(n.task.id))
-      .map((n) => ({ id: n.task.id, label: `${"— ".repeat(n.level)}${n.task.name}` }));
+      .map((n) => ({ id: n.task.id, label: `${"— ".repeat(n.level)}${n.task.code ? n.task.code + " " : ""}${n.task.name}` }));
   }, [tree, nodeById, editingId]);
 
   const editingNode = editingId ? nodeById.get(editingId) || null : null;
@@ -1162,6 +1164,7 @@ export default function ScheduleModule() {
             ) : (
               isTree && <span className="sch-caret placeholder" />
             )}
+            {n.task.code && <span className="sch-code mono">{n.task.code}</span>}
             <span className="sch-name-text">{n.task.name}</span>
             {n.task.kind === "extra" && (
               <span className="tag-extra" title={n.task.reason || "Непредвиденная работа"}>
@@ -1466,7 +1469,7 @@ export default function ScheduleModule() {
         <input
           className="search"
           type="text"
-          placeholder="Поиск по наименованию этапа…"
+          placeholder="Поиск по шифру или наименованию…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
