@@ -855,3 +855,7 @@ td.risk-reasons { color: var(--muted); font-size: 12.5px; max-width: 260px; }
 td.is-missing { color: var(--st-warn-ink); font-weight: 600; }
 .bud-total-row.is-missing-row td { color: var(--st-warn-ink); }
 .check-row { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+
+/* ---- Закрытие работы без затрат: обязательный комментарий ---- */
+.field.zero-close { border-left: 3px solid var(--st-warn-ink); padding-left: 10px; }
+.field.zero-close label { color: var(--st-warn-ink); }
