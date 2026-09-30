@@ -169,8 +169,9 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
             className={`gantt-name${r.isGroup ? " is-group" : ""}${selectedId === r.task.id ? " is-sel" : ""}`}
             style={{ paddingLeft: 10 + r.level * 14 }}
             onClick={() => onPick(r.task.id)}
-            title={r.task.name}
+            title={r.task.code ? `${r.task.code} ${r.task.name}` : r.task.name}
           >
+            {r.task.code && <span className="sch-code mono">{r.task.code}</span>}
             {r.task.name}
           </div>
         ))}
