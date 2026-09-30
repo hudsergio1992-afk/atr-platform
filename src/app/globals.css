@@ -889,3 +889,6 @@ td.is-deferred { color: var(--muted); font-weight: 500; }
 .obj-card .fin-result { font-size: 15px; white-space: nowrap; }
 .obj-card .fin-result.is-neg, .obj-card .cmeta .is-neg { color: var(--st-bad-ink); font-weight: 600; }
 .obj-card .cmeta .is-pos { color: var(--st-good-ink); font-weight: 600; }
+
+/* Подробности строк открываются двойным нажатием — без зума страницы на телефоне. */
+.obj-row, .obj-card, .accept-row, .wk-c, .gantt-name, .gantt-row { touch-action: manipulation; }
