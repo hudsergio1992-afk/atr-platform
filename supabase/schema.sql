@@ -290,10 +290,14 @@ create table if not exists public.budget_lines (
   -- null — прогноз считается автоматически (не меньше плана и факта).
   forecast_amount numeric(14, 2) check (forecast_amount is null or forecast_amount >= 0),
   note            text,
+  -- true — нулевой факт подтверждён (давальческий материал, техника не понадобилась):
+  -- по закрытой работе такая статья идёт в экономию, а не в «факт не внесён».
+  zero_fact_confirmed boolean not null default false,
   history         jsonb       not null default '[]'::jsonb,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
+alter table public.budget_lines add column if not exists zero_fact_confirmed boolean not null default false;
 create index if not exists budget_lines_object_idx on public.budget_lines (object_id, section);
 
 create table if not exists public.customer_payments (
