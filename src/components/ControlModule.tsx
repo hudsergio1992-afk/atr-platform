@@ -22,6 +22,7 @@ import { fmtDate, fmtDateTime, fmtPercent, plural } from "@/lib/format";
 import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -75,6 +76,7 @@ function issueToForm(i: SiteIssue | null): IssueForm {
 }
 
 export default function ControlModule() {
+  const dbl = useDoubleTap();
   const today = useToday();
 
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
@@ -652,7 +654,7 @@ export default function ControlModule() {
                 const late = i.resolved_at && i.due_date && i.resolved_at > i.due_date;
                 return (
                   <li key={i.id} className="accept-item">
-                    <div className="accept-row" onClick={() => setIssueDetailId(isOpen ? null : i.id)}>
+                    <div className="accept-row" onClick={dbl(i.id, () => setIssueDetailId(isOpen ? null : i.id))} title={DOUBLE_TAP_HINT}>
                       <div className="accept-main">
                         <div className="accept-name">{i.description}</div>
                         <div className="accept-sub">
