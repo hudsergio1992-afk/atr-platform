@@ -341,8 +341,8 @@ tr.detail-row td { padding: 0; }
     background: var(--st-warn-bg); color: var(--st-warn-ink);
 }
 .sch-caret {
-    flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; padding: 0;
-    border: none; background: none; color: var(--muted); cursor: pointer; font-size: 11px;
+    flex: 0 0 auto; width: 22px; height: 22px; line-height: 1; padding: 0;
+    border: none; background: none; color: var(--muted); cursor: pointer; font-size: 15px;
 }
 .sch-caret.placeholder { cursor: default; }
 .sch-c-dur, .sch-c-pp, .sch-c-dev, .sch-c-days, .sch-c-cost { text-align: right; }
