@@ -21,6 +21,7 @@ import { fmtDate, fmtDateTime, fmtMoney, fmtNum, fmtPercent, plural } from "@/li
 import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -159,6 +160,7 @@ function numOrNull(v: string): number | null {
 }
 
 export default function SupplyModule() {
+  const dbl = useDoubleTap();
   const today = useToday();
 
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
@@ -949,7 +951,7 @@ export default function SupplyModule() {
                   const offersCount = (offersByRequest.get(r.id) || []).length;
                   return (
                     <Fragment key={r.id}>
-                      <tr className="obj-row" onClick={() => toggleRequest(r.id)}>
+                      <tr className="obj-row" onClick={dbl(r.id, () => toggleRequest(r.id))} title={DOUBLE_TAP_HINT}>
                         <td className="name-cell">
                           {r.material_name}
                           {offersCount > 0 && (
@@ -994,7 +996,7 @@ export default function SupplyModule() {
             filtered.map((r) => {
               const late = deliveryLate(r);
               return (
-                <div className="obj-card" key={r.id} onClick={() => toggleRequest(r.id)}>
+                <div className="obj-card" key={r.id} onClick={dbl(r.id, () => toggleRequest(r.id))} title={DOUBLE_TAP_HINT}>
                   <div className="row1">
                     <div>
                       <div className="cname">{r.material_name}</div>
@@ -1125,7 +1127,7 @@ export default function SupplyModule() {
                   const p = st?.onTimePercent ?? null;
                   return (
                     <Fragment key={s.id}>
-                      <tr className="obj-row" onClick={() => setSupDetailId((c) => (c === s.id ? null : s.id))}>
+                      <tr className="obj-row" onClick={dbl(s.id, () => setSupDetailId((c) => (c === s.id ? null : s.id)))} title={DOUBLE_TAP_HINT}>
                         <td className="name-cell">{s.name}</td>
                         <td>{s.contact_person || "—"}</td>
                         <td className="mono">{s.phone || "—"}</td>
@@ -1157,7 +1159,7 @@ export default function SupplyModule() {
               const st = supplierStats.get(s.id);
               const p = st?.onTimePercent ?? null;
               return (
-                <div className="obj-card" key={s.id} onClick={() => setSupDetailId((c) => (c === s.id ? null : s.id))}>
+                <div className="obj-card" key={s.id} onClick={dbl(s.id, () => setSupDetailId((c) => (c === s.id ? null : s.id)))} title={DOUBLE_TAP_HINT}>
                   <div className="row1">
                     <div>
                       <div className="cname">{s.name}</div>
