@@ -868,3 +868,12 @@ td.is-missing { color: var(--st-warn-ink); font-weight: 600; }
 .close-line-plan { color: var(--muted); font-size: 12px; }
 .close-line.is-total { font-weight: 700; border-top: 1px solid var(--border); padding-top: 6px; }
 .close-line.is-total > .mono:last-child { text-align: right; padding-right: 8px; }
+
+/* ---- Бюджет в порядке графика: метка раздела затрат у статьи ---- */
+.bud-sect-tag {
+    display: inline-block; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
+    padding: 1px 6px; border-radius: 4px; margin-right: 6px; color: #fff; vertical-align: 1px;
+}
+.bud-sect-tag.sect-materials { background: var(--sect-materials); }
+.bud-sect-tag.sect-works { background: var(--sect-works); }
+.bud-sect-tag.sect-equipment { background: var(--sect-equipment); }
