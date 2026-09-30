@@ -211,6 +211,12 @@ export default function PortfolioHealth() {
       ),
     [objects, budgetByObject, tasksByObject, paymentsByObject]
   );
+  /** Выполнено работ в ₽ (стоимость × % готовности) по объекту — для сравнения с тратами. */
+  const workDoneById = useMemo(() => {
+    const m = new Map<string, number | null>();
+    healths.forEach((h) => m.set(h.object.id, h.schedule.costDone));
+    return m;
+  }, [healths]);
   const visibleFinances = useMemo(
     () => (selectedObjectId ? finances.filter((f) => f.object.id === selectedObjectId) : finances),
     [finances, selectedObjectId]
@@ -224,6 +230,7 @@ export default function PortfolioHealth() {
       contract: sum((f) => f.contract || 0),
       plan: sum((f) => f.plan),
       fact: sum((f) => f.fact),
+      workDone: sum((f) => workDoneById.get(f.object.id) || 0),
       forecast: sum((f) => f.forecast),
       resultPlan: sum((f) => f.resultPlan || 0),
       resultForecast: sum((f) => f.resultForecast || 0),
@@ -232,7 +239,7 @@ export default function PortfolioHealth() {
       cashGap: sum((f) => (f.hasPayments ? f.cashGap : 0)),
       hasPayments: ready.some((f) => f.hasPayments),
     };
-  }, [finances]);
+  }, [finances, workDoneById]);
 
   const topRisks = useMemo(() => computeTopRisks(visibleHealths), [visibleHealths]);
 
@@ -446,6 +453,7 @@ export default function PortfolioHealth() {
                     <th>Договор</th>
                     <th>Смета</th>
                     <th>Факт затрат</th>
+                    <th title="Стоимость работ графика × % готовности — сколько работы сделано в деньгах">Выполнено работ</th>
                     <th>Прогноз затрат</th>
                     <th title="Договор − смета: с каким результатом объект взят">Результат по смете</th>
                     <th title="Договор − прогноз затрат: чем объект закончится при текущем раскладе">Результат прогноз</th>
@@ -463,6 +471,7 @@ export default function PortfolioHealth() {
                       <td className="mono">{f.contract ? fmtMoney(f.contract) : "—"}</td>
                       <td className="mono">{f.hasBudget ? fmtMoney(f.plan) : "—"}</td>
                       <td className="mono">{f.hasBudget ? fmtMoney(f.fact) : "—"}</td>
+                      <td className="mono">{workDoneById.get(f.object.id) != null ? fmtMoney(workDoneById.get(f.object.id)) : "—"}</td>
                       <td className="mono">{f.hasBudget ? fmtMoney(f.forecast) : "—"}</td>
                       <td className={`mono${signClass(f.resultPlan)}`}>{fmtSigned(f.resultPlan)}</td>
                       <td className={`mono${signClass(f.resultForecast)}`}>{fmtSigned(f.resultForecast)}</td>
@@ -485,6 +494,7 @@ export default function PortfolioHealth() {
                       <td className="mono">{fmtMoney(financeTotal.contract)}</td>
                       <td className="mono">{fmtMoney(financeTotal.plan)}</td>
                       <td className="mono">{fmtMoney(financeTotal.fact)}</td>
+                      <td className="mono">{fmtMoney(financeTotal.workDone)}</td>
                       <td className="mono">{fmtMoney(financeTotal.forecast)}</td>
                       <td className={`mono${signClass(financeTotal.resultPlan)}`}>{fmtSigned(financeTotal.resultPlan)}</td>
                       <td className={`mono${signClass(financeTotal.resultForecast)}`}>
@@ -539,6 +549,27 @@ export default function PortfolioHealth() {
                   ) : (
                     <>При текущем раскладе объект выходит в плюс.</>
                   )}
+                  {(() => {
+                    const done = workDoneById.get(f.object.id);
+                    if (done == null || !f.hasBudget) return null;
+                    const gap = Math.round((f.fact - done) * 100) / 100;
+                    return (
+                      <>
+                        {" "}
+                        Выполнено работ на {fmtMoney(done)}, потрачено {fmtMoney(f.fact)}
+                        {gap > 0 ? (
+                          <>
+                            {" "}— траты обгоняют работу на <span className="is-neg">{fmtMoney(gap)}</span> (часть может быть
+                            авансами).
+                          </>
+                        ) : gap < 0 ? (
+                          <> — работа обгоняет траты на {fmtMoney(-gap)}.</>
+                        ) : (
+                          "."
+                        )}
+                      </>
+                    );
+                  })()}
                 </p>
               ))}
           </>
@@ -761,14 +792,14 @@ export default function PortfolioHealth() {
                 <i style={{ background: "var(--muted)" }} /> план
               </span>
               <span>
-                <i style={{ background: "var(--accent)" }} /> факт (освоено)
+                <i style={{ background: "var(--accent)" }} /> выполнено в ₽
               </span>
               <span>
                 <i style={{ background: "var(--st-good-ink)" }} /> в актах
               </span>
             </div>
             <div className="curve-foot hint">
-              На {fmtDate(curve[curve.length - 1]?.monthKey + "-01")}: факт {fmtMoney(curve[curve.length - 1]?.fact)}, в
+              На {fmtDate(curve[curve.length - 1]?.monthKey + "-01")}: выполнено в ₽ {fmtMoney(curve[curve.length - 1]?.fact)}, в
               актах {fmtMoney(curve[curve.length - 1]?.acted)}, не в актах {fmtMoney(curve[curve.length - 1]?.notActed)}.
               Незакрытая выработка отнесена к текущему месяцу — точную хронологию система не хранит.
             </div>
