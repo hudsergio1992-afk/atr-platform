@@ -25,7 +25,10 @@ import {
   RISK_LABEL,
 } from "@/lib/portfolioHealth";
 import { fmtDate, fmtMoney, fmtPercent, plural } from "@/lib/format";
-import { OBJECT_KEY, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient";
+
+/** Выбор на дашборде, включая «Все объекты» (пустая строка). */
+const DASH_OBJECT_KEY = "atr.dashboard.objectId";
 import SchemaSetup from "@/components/SchemaSetup";
 
 interface PendingFlat {
@@ -79,6 +82,10 @@ export default function PortfolioHealth() {
     }
     const objectList = (objs || []) as ConstructionObject[];
     setObjects(objectList);
+    // Дашборд помнит свой выбор; если его ещё не было — берёт объект, открытый на остальных вкладках.
+    const savedDash = readSetting(DASH_OBJECT_KEY);
+    const saved = savedDash !== null ? savedDash : readSetting(OBJECT_KEY) || "";
+    setSelectedObjectId(objectList.some((o) => o.id === saved) ? saved : "");
     setSchemaMissing(false);
 
     if (!objectList.length) {
@@ -328,6 +335,7 @@ export default function PortfolioHealth() {
             value={selectedObjectId}
             onChange={(e) => {
               setSelectedObjectId(e.target.value);
+              writeSetting(DASH_OBJECT_KEY, e.target.value);
               // Конкретный объект открывается и на остальных вкладках; «Все объекты» их не трогает.
               if (e.target.value) writeSetting(OBJECT_KEY, e.target.value);
             }}
