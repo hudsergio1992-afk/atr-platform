@@ -33,6 +33,7 @@ import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient
 /** Выбор на дашборде, включая «Все объекты» (пустая строка). */
 const DASH_OBJECT_KEY = "atr.dashboard.objectId";
 import SchemaSetup from "@/components/SchemaSetup";
+import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 interface PendingFlat {
   objectId: string;
@@ -56,6 +57,7 @@ const fmtSigned = (n: number | null): string =>
 const signClass = (n: number | null): string => (n === null || n === 0 ? "" : n < 0 ? " is-neg" : " is-pos");
 
 export default function PortfolioHealth() {
+  const dbl = useDoubleTap();
   const today = useToday();
 
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
@@ -660,7 +662,7 @@ export default function PortfolioHealth() {
               const isOpen = openAcceptTaskId === p.task.task.id;
               return (
                 <li key={p.task.task.id} className="accept-item">
-                  <div className="accept-row" onClick={() => (isOpen ? closeAccept() : openAccept(p))}>
+                  <div className="accept-row" onClick={dbl(p.task.task.id, () => (isOpen ? closeAccept() : openAccept(p)))} title={DOUBLE_TAP_HINT}>
                     <div className="accept-main">
                       <div className="accept-name">{p.task.task.name}</div>
                       <div className="accept-sub">{p.objectName}</div>
