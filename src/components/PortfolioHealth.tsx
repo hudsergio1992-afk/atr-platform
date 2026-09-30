@@ -226,7 +226,9 @@ export default function PortfolioHealth() {
       resultPlan: sum((f) => f.resultPlan || 0),
       resultForecast: sum((f) => f.resultForecast || 0),
       paid: sum((f) => f.paid),
-      cashGap: sum((f) => f.cashGap),
+      // Разрыв по деньгам — только по объектам, где оплаты внесены, иначе он равен всему факту.
+      cashGap: sum((f) => (f.hasPayments ? f.cashGap : 0)),
+      hasPayments: ready.some((f) => f.hasPayments),
     };
   }, [finances]);
 
@@ -486,8 +488,12 @@ export default function PortfolioHealth() {
                       <td className={`mono${signClass(financeTotal.resultForecast)}`}>
                         {fmtSigned(financeTotal.resultForecast)}
                       </td>
-                      <td className="mono">{fmtMoney(financeTotal.paid)}</td>
-                      <td className="mono">{fmtMoney(financeTotal.cashGap)}</td>
+                      <td className="mono">
+                        {financeTotal.hasPayments ? fmtMoney(financeTotal.paid) : <span className="fin-muted">не внесено</span>}
+                      </td>
+                      <td className={`mono${financeTotal.hasPayments && financeTotal.cashGap > 0 ? " is-neg" : ""}`}>
+                        {financeTotal.hasPayments ? fmtMoney(financeTotal.cashGap) : <span className="fin-muted">—</span>}
+                      </td>
                     </tr>
                   </tfoot>
                 )}
