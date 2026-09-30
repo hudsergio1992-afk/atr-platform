@@ -14,9 +14,14 @@ import {
   HistoryEntry,
 } from "@/lib/types";
 import { fmtDate, fmtDateTime, fmtMoney, plural } from "@/lib/format";
-import { OBJECT_KEY, readSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, writeSetting } from "@/lib/useClient";
+
+/** Порядок статей: по разделам затрат или как в «Графике работ» (по шифру работы). */
+type LinesOrder = "sections" | "schedule";
+const LS_ORDER_KEY = "atr.budget.order";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
+import { workCodeOf } from "@/lib/zeroCost";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -103,6 +108,13 @@ export default function BudgetModule() {
 
   const [basis, setBasis] = useState<Basis>("plan");
   const [sectionFilter, setSectionFilter] = useState<SectionFilter>("all");
+  const [linesOrder, setLinesOrder] = useState<LinesOrder>("sections");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- настройка читается из localStorage только в браузере
+    if (readSetting(LS_ORDER_KEY) === "schedule") setLinesOrder("schedule");
+  }, []);
+  /** Названия работ и этапов графика по шифру — для заголовков в порядке «как в графике». */
+  const [workNames, setWorkNames] = useState<Map<string, string>>(new Map());
 
   const [linePanelOpen, setLinePanelOpen] = useState(false);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -157,7 +169,7 @@ export default function BudgetModule() {
       supabase.from("customer_payments").select("*").eq("object_id", id).order("payment_date", { ascending: false }),
       supabase.from("acceptance_acts").select("amount").eq("object_id", id).eq("status", "signed"),
       supabase.from("supply_requests").select("order_amount,status").eq("object_id", id).in("status", ["ordered", "delivered"]),
-      supabase.from("schedule_tasks").select("code,progress_fact").eq("object_id", id),
+      supabase.from("schedule_tasks").select("code,name,progress_fact").eq("object_id", id),
     ]);
     if (id !== objectIdRef.current) return;
     const missing = needsSchemaSetup(lineRes.error) || needsSchemaSetup(payRes.error);
@@ -166,9 +178,11 @@ export default function BudgetModule() {
     else if (payRes.error && !needsSchemaSetup(payRes.error)) setBanner(dbErrorText(payRes.error, "Не удалось загрузить платежи"));
 
     setLines((lineRes.data as BudgetLine[]) || []);
+    const taskRows = (taskRes.data as { code: string | null; name: string; progress_fact: number | null }[]) || [];
+    setWorkNames(new Map(taskRows.filter((t) => t.code).map((t) => [t.code as string, t.name])));
     setProgressByCode(
       new Map(
-        ((taskRes.data as { code: string | null; progress_fact: number | null }[]) || [])
+        taskRows
           .filter((t) => t.code)
           .map((t) => [t.code as string, Number(t.progress_fact) || 0])
       )
@@ -533,6 +547,25 @@ export default function BudgetModule() {
                   </option>
                 ))}
               </select>
+              <div className="seg" role="tablist" aria-label="Порядок статей">
+                {(
+                  [
+                    ["sections", "По разделам"],
+                    ["schedule", "Как в графике"],
+                  ] as [LinesOrder, string][]
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    className={`seg-btn${linesOrder === k ? " active" : ""}`}
+                    onClick={() => {
+                      setLinesOrder(k);
+                      writeSetting(LS_ORDER_KEY, k);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <button className="btn btn-primary" onClick={() => openLinePanel(null)}>
                 + Статья
               </button>
@@ -545,6 +578,8 @@ export default function BudgetModule() {
                 bySection={bySection}
                 visibleSections={visibleSections}
                 progressByCode={progressByCode}
+                linesOrder={linesOrder}
+                workNames={workNames}
                 detailId={lineDetailId}
                 setDetailId={setLineDetailId}
                 pendingDeleteId={linePendingDeleteId}
@@ -732,6 +767,8 @@ function LinesTable({
   bySection,
   visibleSections,
   progressByCode,
+  linesOrder,
+  workNames,
   detailId,
   setDetailId,
   pendingDeleteId,
@@ -742,6 +779,8 @@ function LinesTable({
   bySection: Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>;
   visibleSections: BudgetSection[];
   progressByCode: Map<string, number>;
+  linesOrder: LinesOrder;
+  workNames: Map<string, string>;
   detailId: string | null;
   setDetailId: (id: string | null) => void;
   pendingDeleteId: string | null;
@@ -868,6 +907,60 @@ function LinesTable({
   const sectionDev = (ls: BudgetLine[]): number =>
     Math.round(ls.reduce((sum, l) => sum + (devOf(l) ?? 0), 0) * 100) / 100;
 
+  /** Строка статьи; в порядке «как в графике» у названия — метка раздела затрат. */
+  const renderRow = (l: BudgetLine, withSection: boolean) => {
+    const forecast = budgetForecast(l);
+    const dev = devOf(l);
+    return (
+      <Fragment key={l.id}>
+        <tr className="obj-row" onClick={() => setDetailId(detailId === l.id ? null : l.id)}>
+          <td className="name-cell">
+            {withSection && <span className={`bud-sect-tag sect-${l.section}`}>{BUDGET_SECTION_LABEL[l.section]}</span>}
+            {l.name}
+          </td>
+          <td className="mono">{fmtMoney(l.plan_amount)}</td>
+          <td className={`mono${l.fact_amount > l.plan_amount ? " is-neg" : ""}`}>{fmtMoney(l.fact_amount)}</td>
+          <td className="mono">
+            {fmtMoney(forecast)}
+            {l.forecast_amount == null && <span className="bud-auto">авто</span>}
+          </td>
+          {isMissing(l) ? (
+            <td className="mono is-missing" title="Работа по графику закрыта, а факт 0 ₽. Внесите факт или отметьте в статье «Факт 0 ₽ подтверждён».">
+              факт не внесён
+            </td>
+          ) : (
+            <td className={`mono${devClass(dev)}`}>
+              {fmtDev(dev)}
+              {l.fact_amount <= 0 && dev !== null && <span className="bud-auto">0 ₽ подтв.</span>}
+            </td>
+          )}
+        </tr>
+        {detailId === l.id && (
+          <tr className="detail-row">
+            <td colSpan={5}>{renderDetail(l)}</td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  };
+
+  /** Натуральный порядок шифров: 2.1 < 2.10 < 10.1. */
+  const byName = (a: BudgetLine, b: BudgetLine) => a.name.localeCompare(b.name, "ru", { numeric: true });
+  const stageOf = (l: BudgetLine): string => workCodeOf(l.name)?.split(".")[0] ?? "";
+  const scheduleGroups = (() => {
+    const all = visibleSections.flatMap((s) => bySection.get(s)?.lines || []);
+    const m = new Map<string, BudgetLine[]>();
+    all.forEach((l) => {
+      const k = stageOf(l);
+      const arr = m.get(k);
+      if (arr) arr.push(l);
+      else m.set(k, [l]);
+    });
+    return [...m.entries()]
+      .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : Number(a) - Number(b)))
+      .map(([k, ls]) => ({ key: k, lines: ls.sort(byName) }));
+  })();
+
   return (
     <div className="table-wrap">
       <table>
@@ -881,7 +974,28 @@ function LinesTable({
           </tr>
         </thead>
         <tbody>
-          {visibleSections.map((s) => {
+          {linesOrder === "schedule" && scheduleGroups.map((g) => {
+            const sum = (pick: (l: BudgetLine) => number) =>
+              Math.round(g.lines.reduce((acc, l) => acc + pick(l), 0) * 100) / 100;
+            return (
+              <Fragment key={`st-${g.key}`}>
+                <tr className="bud-group-head">
+                  <td colSpan={5}>
+                    {g.key ? `${g.key} ${workNames.get(g.key) || ""}`.trim() : "Без шифра работы"}
+                  </td>
+                </tr>
+                {g.lines.map((l) => renderRow(l, true))}
+                <tr className="bud-group-foot">
+                  <td>Подытог</td>
+                  <td className="mono">{fmtMoney(sum((l) => l.plan_amount))}</td>
+                  <td className="mono">{fmtMoney(sum((l) => l.fact_amount))}</td>
+                  <td className="mono">{fmtMoney(sum((l) => budgetForecast(l)))}</td>
+                  <td className={`mono${devClass(sectionDev(g.lines))}`}>{fmtDev(sectionDev(g.lines))}</td>
+                </tr>
+              </Fragment>
+            );
+          })}
+          {linesOrder === "sections" && visibleSections.map((s) => {
             const v = bySection.get(s)!;
             if (v.lines.length === 0) return null;
             return (
@@ -891,39 +1005,8 @@ function LinesTable({
                 </tr>
                 {v.lines
                   .slice()
-                  .sort((a, b) => a.name.localeCompare(b.name, "ru"))
-                  .map((l) => {
-                    const forecast = budgetForecast(l);
-                    const dev = devOf(l);
-                    return (
-                      <Fragment key={l.id}>
-                        <tr className="obj-row" onClick={() => setDetailId(detailId === l.id ? null : l.id)}>
-                          <td className="name-cell">{l.name}</td>
-                          <td className="mono">{fmtMoney(l.plan_amount)}</td>
-                          <td className={`mono${l.fact_amount > l.plan_amount ? " is-neg" : ""}`}>{fmtMoney(l.fact_amount)}</td>
-                          <td className="mono">
-                            {fmtMoney(forecast)}
-                            {l.forecast_amount == null && <span className="bud-auto">авто</span>}
-                          </td>
-                          {isMissing(l) ? (
-                            <td className="mono is-missing" title="Работа по графику закрыта, а факт 0 ₽. Внесите факт или отметьте в статье «Факт 0 ₽ подтверждён».">
-                              факт не внесён
-                            </td>
-                          ) : (
-                            <td className={`mono${devClass(dev)}`}>
-                              {fmtDev(dev)}
-                              {l.fact_amount <= 0 && dev !== null && <span className="bud-auto">0 ₽ подтв.</span>}
-                            </td>
-                          )}
-                        </tr>
-                        {detailId === l.id && (
-                          <tr className="detail-row">
-                            <td colSpan={5}>{renderDetail(l)}</td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
+                  .sort(byName)
+                  .map((l) => renderRow(l, false))}
                 <tr className="bud-group-foot">
                   <td>Подытог</td>
                   <td className="mono">{fmtMoney(v.plan)}</td>
