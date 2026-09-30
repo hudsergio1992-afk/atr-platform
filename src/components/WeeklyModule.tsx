@@ -34,7 +34,6 @@ import {
   weekLabel,
 } from "@/lib/weekly";
 import {
-  fmtMoney,
   deviationWords,
   fmtDate,
   fmtDateTime,
@@ -47,7 +46,7 @@ import {
 import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
-import { CostByWork, loadCostByWork, zeroCostPlan } from "@/lib/zeroCost";
+import { CostByWork, loadCostByWork, workFactEntered } from "@/lib/zeroCost";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -412,15 +411,14 @@ export default function WeeklyModule() {
    * расхождение «в задании 98,5%, в графике 50%» — это неверная картина стройки.
    */
   /**
-   * Закрыть работу из задания нельзя, если на неё заложены деньги, а факт затрат 0 ₽:
-   * для этого нужен комментарий, а его пишут в «Графике работ». Тогда работа
-   * остаётся на 99% и возвращается текст предупреждения.
+   * Закрыть работу из задания можно, только если её фактическая стоимость уже
+   * внесена в «Сметы и бюджет». Иначе работа остаётся на 99%: факт ставится
+   * при закрытии в «Графике работ».
    */
   function zeroCloseBlock(node: TaskNode, progress: number): string | null {
     if (progress < 100 || node.progressFact >= 100) return null;
-    const plan = zeroCostPlan(node.task.code, node.task.cost_total, costByWork);
-    if (plan === null) return null;
-    return `«${node.task.name}» не закрыта: на неё заложено ${fmtMoney(plan)}, а затрат 0 ₽ — закройте её в «Графике работ» с комментарием`;
+    if (workFactEntered(node.task.code, costByWork)) return null;
+    return `«${node.task.name}» не закрыта: при закрытии нужно поставить фактическую стоимость — закройте её в «Графике работ»`;
   }
 
   async function syncTaskProgress(item: WeeklyItem, nextPercent: number | null, nextVolume: number | null) {
@@ -456,7 +454,7 @@ export default function WeeklyModule() {
         text: `% готовности факт: ${fmtPercent(node.progressFact)} → ${fmtPercent(
           finalProgress
         )} (недельное задание ${weekLabel(assignment?.week_start || now.slice(0, 10))})${
-          blocked ? " — не закрыта: затрат по работе 0 ₽, нужен комментарий в «Графике работ»" : ""
+          blocked ? " — не закрыта: не внесена фактическая стоимость, закрыть в «Графике работ»" : ""
         }`,
       },
     ];
@@ -514,7 +512,7 @@ export default function WeeklyModule() {
           text: `% готовности факт: ${fmtPercent(node.progressFact)} → ${fmtPercent(
             progress
           )} (закрытие недели ${weekLabel(assignment?.week_start || week.created_at)})${
-            blocked ? " — не закрыта: затрат по работе 0 ₽, нужен комментарий в «Графике работ»" : ""
+            blocked ? " — не закрыта: не внесена фактическая стоимость, закрыть в «Графике работ»" : ""
           }`,
         },
       ];
