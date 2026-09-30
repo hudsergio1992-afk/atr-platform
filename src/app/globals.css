@@ -279,7 +279,10 @@ tr.detail-row td { padding: 0; }
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 16px 0 2px;
 }
-.obj-picker label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.obj-picker label, .obj-picker-label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.obj-current { font-weight: 700; font-size: 15px; }
+.obj-change { font-size: 12.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.obj-change:hover { color: var(--ink); }
 .obj-picker select.filter { flex: 1 1 280px; max-width: 460px; font-weight: 600; }
 .obj-picker-meta { font-size: 12.5px; color: var(--muted); }
 
