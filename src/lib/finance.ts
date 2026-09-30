@@ -40,13 +40,70 @@ export interface ObjectFinance {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export function computeObjectFinance(
-  object: ConstructionObject,
-  lines: BudgetLine[],
-  tasks: ScheduleTask[],
-  payments: CustomerPayment[]
-): ObjectFinance {
-  const done = object.status === "done";
+/**
+ * Как статья бюджета входит в экономию/перерасход — одно правило для «Смет и бюджета» и дашборда.
+ * - counted — входит: работа закрыта (или объект завершён), либо факт уже превысил смету —
+ *   перерасход считается сразу, эти деньги уже потрачены;
+ * - remainder — работа не закрыта, факт в пределах сметы: «план − факт» — неизрасходованный
+ *   остаток, а не экономия; станет экономией или уйдёт в расход после закрытия;
+ * - deferred — накладные до завершения объекта;
+ * - missing — работа закрыта, а факт 0 ₽ без подтверждения;
+ * - notStarted — факта ещё нет.
+ */
+export type LineKind = "counted" | "remainder" | "deferred" | "missing" | "notStarted";
+
+export interface LineRules {
+  isOverhead: (l: BudgetLine) => boolean;
+  isClosed: (l: BudgetLine) => boolean;
+  kind: (l: BudgetLine) => LineKind;
+  /** План − факт по статье: минус — перерасход, плюс — экономия или остаток; null — факта нет. */
+  dev: (l: BudgetLine) => number | null;
+  /** Прогноз затрат по статье: по закрытой работе — её факт, по остальным — не меньше сметы. */
+  forecast: (l: BudgetLine) => number;
+}
+
+/**
+ * progress — % факт работ графика по шифру; names — названия работ и этапов по шифру
+ * (накладные — статьи этапа, в названии которого есть «накладн»).
+ */
+export function makeLineRules(progress: Map<string, number>, names: Map<string, string>, objectDone: boolean): LineRules {
+  const isOverhead = (l: BudgetLine): boolean => {
+    const stage = workCodeOf(l.name)?.split(".")[0];
+    return /накладн/i.test(stage ? names.get(stage) || "" : "") || /накладн/i.test(l.name);
+  };
+  const isClosed = (l: BudgetLine): boolean => {
+    const code = workCodeOf(l.name);
+    return code !== null && (progress.get(code) ?? -1) >= 100;
+  };
+  const kind = (l: BudgetLine): LineKind => {
+    const p = Number(l.plan_amount) || 0;
+    const f = Number(l.fact_amount) || 0;
+    if (!objectDone && isOverhead(l)) return "deferred";
+    if (objectDone || isClosed(l)) {
+      if (f <= 0 && p > 0 && !l.zero_fact_confirmed) return "missing";
+      return "counted";
+    }
+    if (f > p) return "counted";
+    if (f > 0) return "remainder";
+    return "notStarted";
+  };
+  const dev = (l: BudgetLine): number | null => {
+    const p = Number(l.plan_amount) || 0;
+    const f = Number(l.fact_amount) || 0;
+    if (f > 0) return r2(p - f);
+    return kind(l) === "counted" ? r2(p) : null;
+  };
+  const forecast = (l: BudgetLine): number => {
+    const p = Number(l.plan_amount) || 0;
+    const f = Number(l.fact_amount) || 0;
+    if (kind(l) === "counted" && (objectDone || isClosed(l))) return f;
+    return l.forecast_amount !== null && l.forecast_amount !== undefined ? Number(l.forecast_amount) : Math.max(p, f);
+  };
+  return { isOverhead, isClosed, kind, dev, forecast };
+}
+
+/** Прогресс и названия работ графика по шифру — вход для makeLineRules. */
+export function scheduleMaps(tasks: Pick<ScheduleTask, "code" | "name" | "progress_fact">[]) {
   const progress = new Map<string, number>();
   const names = new Map<string, string>();
   tasks.forEach((t) => {
@@ -54,6 +111,18 @@ export function computeObjectFinance(
     progress.set(t.code, Number(t.progress_fact) || 0);
     names.set(t.code, t.name);
   });
+  return { progress, names };
+}
+
+export function computeObjectFinance(
+  object: ConstructionObject,
+  lines: BudgetLine[],
+  tasks: ScheduleTask[],
+  payments: CustomerPayment[]
+): ObjectFinance {
+  const done = object.status === "done";
+  const { progress, names } = scheduleMaps(tasks);
+  const rules = makeLineRules(progress, names, done);
 
   let plan = 0;
   let fact = 0;
@@ -65,20 +134,11 @@ export function computeObjectFinance(
     const f = Number(l.fact_amount) || 0;
     plan += p;
     fact += f;
-    const code = workCodeOf(l.name);
-    const stage = code ? code.split(".")[0] : "";
-    const overhead = /накладн/i.test(names.get(stage) || "") || /накладн/i.test(l.name);
-    const closed = code !== null && (progress.get(code) ?? -1) >= 100;
-    // Факт по закрытой работе окончателен, если он внесён или ноль подтверждён.
-    const factFinal = f > 0 || !!l.zero_fact_confirmed || p <= 0;
-    if (done || (closed && !overhead && factFinal)) {
-      forecast += f;
-      lockedSaving += p - f;
-    } else {
-      const lf = l.forecast_amount !== null && l.forecast_amount !== undefined ? Number(l.forecast_amount) : Math.max(p, f);
-      forecast += lf;
-      remainingPlan += Math.max(0, lf - f);
-    }
+    const lf = rules.forecast(l);
+    forecast += lf;
+    // Факт закрытой работы окончателен: её экономия/перерасход уже не изменятся.
+    if (rules.kind(l) === "counted" && (done || rules.isClosed(l))) lockedSaving += p - f;
+    else remainingPlan += Math.max(0, lf - f);
   });
 
   const contract = object.contract_amount !== null && object.contract_amount !== undefined ? Number(object.contract_amount) : null;
