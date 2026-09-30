@@ -34,6 +34,7 @@ import {
   weekLabel,
 } from "@/lib/weekly";
 import {
+  fmtMoney,
   deviationWords,
   fmtDate,
   fmtDateTime,
@@ -46,9 +47,13 @@ import {
 import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
+import { CostByWork, loadCostByWork, zeroCostPlan } from "@/lib/zeroCost";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
+
+/** До какого процента доводится работа, которую нельзя закрыть без комментария. */
+const HOLD_BELOW_CLOSED = 99;
 
 interface FormState {
   taskId: string;
@@ -121,6 +126,8 @@ export default function WeeklyModule() {
   const [objects, setObjects] = useState<ConstructionObject[]>([]);
   const [objectId, setObjectId] = useState<string>("");
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
+  /** План и факт статей бюджета по шифру работы — для правила «закрытие без затрат». */
+  const [costByWork, setCostByWork] = useState<Map<string, CostByWork>>(new Map());
   const [assignments, setAssignments] = useState<WeeklyAssignment[]>([]);
   const [items, setItems] = useState<WeeklyItem[]>([]);
 
@@ -170,10 +177,12 @@ export default function WeeklyModule() {
       return;
     }
     setLoadingWeek(true);
-    const [tasksRes, asgRes] = await Promise.all([
+    const [tasksRes, asgRes, costs] = await Promise.all([
       supabase.from("schedule_tasks").select("*").eq("object_id", id).order("sort_order"),
       supabase.from("weekly_assignments").select("*").eq("object_id", id).order("week_start", { ascending: false }),
+      loadCostByWork(id),
     ]);
+    setCostByWork(costs);
     if (tasksRes.error) setBanner(dbErrorText(tasksRes.error, "Не удалось загрузить график"));
     if (asgRes.error) setBanner(dbErrorText(asgRes.error, "Не удалось загрузить задания"));
     setSchemaMissing(needsSchemaSetup(tasksRes.error) || needsSchemaSetup(asgRes.error));
@@ -402,6 +411,18 @@ export default function WeeklyModule() {
    * Ждать закрытия недели нельзя: руководство смотрит график каждый день, и
    * расхождение «в задании 98,5%, в графике 50%» — это неверная картина стройки.
    */
+  /**
+   * Закрыть работу из задания нельзя, если на неё заложены деньги, а факт затрат 0 ₽:
+   * для этого нужен комментарий, а его пишут в «Графике работ». Тогда работа
+   * остаётся на 99% и возвращается текст предупреждения.
+   */
+  function zeroCloseBlock(node: TaskNode, progress: number): string | null {
+    if (progress < 100 || node.progressFact >= 100) return null;
+    const plan = zeroCostPlan(node.task.code, node.task.cost_total, costByWork);
+    if (plan === null) return null;
+    return `«${node.task.name}» не закрыта: на неё заложено ${fmtMoney(plan)}, а затрат 0 ₽ — закройте её в «Графике работ» с комментарием`;
+  }
+
   async function syncTaskProgress(item: WeeklyItem, nextPercent: number | null, nextVolume: number | null) {
     if (!item.task_id) return;
     const node = nodeById.get(item.task_id);
@@ -415,8 +436,13 @@ export default function WeeklyModule() {
     }
     if (progress === null) return;
 
-    const finalProgress = clampPercent(progress);
-    if (Math.abs(finalProgress - node.progressFact) < 0.05) return;
+    let finalProgress = clampPercent(progress);
+    const blocked = zeroCloseBlock(node, finalProgress);
+    if (blocked) finalProgress = HOLD_BELOW_CLOSED;
+    if (Math.abs(finalProgress - node.progressFact) < 0.05) {
+      if (blocked) setBanner(blocked);
+      return;
+    }
 
     const now = new Date().toISOString();
     const patch: Record<string, unknown> = { progress_fact: finalProgress, updated_at: now };
@@ -429,7 +455,9 @@ export default function WeeklyModule() {
         at: now,
         text: `% готовности факт: ${fmtPercent(node.progressFact)} → ${fmtPercent(
           finalProgress
-        )} (недельное задание ${weekLabel(assignment?.week_start || now.slice(0, 10))})`,
+        )} (недельное задание ${weekLabel(assignment?.week_start || now.slice(0, 10))})${
+          blocked ? " — не закрыта: затрат по работе 0 ₽, нужен комментарий в «Графике работ»" : ""
+        }`,
       },
     ];
     const { error } = await supabase
@@ -437,6 +465,7 @@ export default function WeeklyModule() {
       .update({ ...patch, history })
       .eq("id", item.task_id);
     if (error) setBanner(dbErrorText(error, "Факт записан, но график не обновился"));
+    else if (blocked) setBanner(blocked);
   }
 
   async function pushFactToSchedule(list: WeeklyItem[]): Promise<string[]> {
@@ -466,6 +495,11 @@ export default function WeeklyModule() {
         progress = progressFromVolume(node.volumeTotal, doneByTask.get(taskId) || 0);
       }
       if (progress === null) continue;
+      const blocked = zeroCloseBlock(node, progress);
+      if (blocked) {
+        progress = HOLD_BELOW_CLOSED;
+        problems.push(blocked);
+      }
       if (Math.abs(progress - node.progressFact) < 0.05) continue;
 
       const week = rows[0];
@@ -479,7 +513,9 @@ export default function WeeklyModule() {
           at: now,
           text: `% готовности факт: ${fmtPercent(node.progressFact)} → ${fmtPercent(
             progress
-          )} (закрытие недели ${weekLabel(assignment?.week_start || week.created_at)})`,
+          )} (закрытие недели ${weekLabel(assignment?.week_start || week.created_at)})${
+            blocked ? " — не закрыта: затрат по работе 0 ₽, нужен комментарий в «Графике работ»" : ""
+          }`,
         },
       ];
       const { error } = await supabase
