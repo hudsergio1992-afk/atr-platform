@@ -879,3 +879,13 @@ td.is-deferred { color: var(--muted); font-weight: 500; }
 .bud-sect-tag.sect-materials { background: var(--sect-materials); }
 .bud-sect-tag.sect-works { background: var(--sect-works); }
 .bud-sect-tag.sect-equipment { background: var(--sect-equipment); }
+
+/* ---- Финансы на дашборде ---- */
+.fin-hint { margin: -4px 0 10px; font-size: 12px; }
+.fin-warn { color: var(--st-warn-ink); font-size: 11.5px; font-weight: 500; margin-top: 2px; }
+.fin-muted { color: var(--muted); font-weight: 400; }
+.fin-note { font-size: 13px; margin: 10px 0 0; line-height: 1.5; }
+.fin-note .is-neg { color: var(--st-bad-ink); font-weight: 600; }
+.obj-card .fin-result { font-size: 15px; white-space: nowrap; }
+.obj-card .fin-result.is-neg, .obj-card .cmeta .is-neg { color: var(--st-bad-ink); font-weight: 600; }
+.obj-card .cmeta .is-pos { color: var(--st-good-ink); font-weight: 600; }
