@@ -19,8 +19,9 @@ import {
 import { buildTree, flattenTree } from "@/lib/schedule";
 import { compressImage, randomStorageName } from "@/lib/image";
 import { fmtDate, fmtDateTime, fmtPercent, plural } from "@/lib/format";
-import { OBJECT_KEY, readSetting, useToday, writeSetting } from "@/lib/useClient";
+import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
+import CurrentObject from "@/components/CurrentObject";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
@@ -175,12 +176,6 @@ export default function ControlModule() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- состояние ставится после await, не синхронно
     loadObjectData(objectId);
   }, [objectId, loadObjectData]);
-
-  function changeObject(id: string) {
-    setObjectId(id);
-    setIssueDetailId(null);
-    writeSetting(LS_OBJECT_KEY, id);
-  }
 
   const tree = useMemo(() => (today ? buildTree(tasks, today) : []), [tasks, today]);
   const leaves = useMemo(() => flattenTree(tree).filter((n) => !n.isGroup), [tree]);
@@ -533,21 +528,7 @@ export default function ControlModule() {
       )}
 
       <div className="obj-picker">
-        <label htmlFor="control-object">Объект</label>
-        <select
-          id="control-object"
-          className="filter"
-          value={objectId}
-          onChange={(e) => changeObject(e.target.value)}
-          disabled={loadingObjects || objects.length === 0}
-        >
-          {objects.length === 0 && <option value="">{loadingObjects ? "Загрузка…" : "Объектов нет"}</option>}
-          {objects.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
+        <CurrentObject name={objects.find((o) => o.id === objectId)?.name ?? null} loading={loadingObjects} />
         {selectedObject && <span className="obj-picker-meta">{selectedObject.address}</span>}
       </div>
 
