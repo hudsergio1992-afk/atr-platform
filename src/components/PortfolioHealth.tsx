@@ -6,6 +6,8 @@ import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import {
   AcceptanceAct,
   AcceptanceStatus,
+  BudgetLine,
+  CustomerPayment,
   ACCEPTANCE_STATUS_LABEL,
   ConstructionObject,
   HistoryEntry,
@@ -14,6 +16,7 @@ import {
   WeeklyItem,
 } from "@/lib/types";
 import { TaskNode } from "@/lib/schedule";
+import { computeObjectFinance, ObjectFinance } from "@/lib/finance";
 import {
   ACCEPTANCE_OVERDUE_DAYS,
   computeObjectHealth,
@@ -47,6 +50,11 @@ interface AcceptForm {
 
 const EMPTY_ACCEPT_FORM: AcceptForm = { status: "draft", actNumber: "", actDate: "", amount: "" };
 
+/** Результат со знаком: минус — убыток (красный), плюс — прибыль (зелёный). */
+const fmtSigned = (n: number | null): string =>
+  n === null ? "—" : n === 0 ? "0 ₽" : `${n > 0 ? "+" : "−"}${fmtMoney(Math.abs(n))}`;
+const signClass = (n: number | null): string => (n === null || n === 0 ? "" : n < 0 ? " is-neg" : " is-pos");
+
 export default function PortfolioHealth() {
   const today = useToday();
 
@@ -54,6 +62,8 @@ export default function PortfolioHealth() {
   const [tasksByObject, setTasksByObject] = useState<Map<string, ScheduleTask[]>>(new Map());
   const [weekItemsByObject, setWeekItemsByObject] = useState<Map<string, WeeklyItem[]>>(new Map());
   const [actsByObject, setActsByObject] = useState<Map<string, AcceptanceAct[]>>(new Map());
+  const [budgetByObject, setBudgetByObject] = useState<Map<string, BudgetLine[]>>(new Map());
+  const [paymentsByObject, setPaymentsByObject] = useState<Map<string, CustomerPayment[]>>(new Map());
 
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
@@ -96,11 +106,25 @@ export default function PortfolioHealth() {
       return;
     }
 
-    const [taskRes, asgRes, actRes] = await Promise.all([
+    const [taskRes, asgRes, actRes, budgetRes, payRes] = await Promise.all([
       supabase.from("schedule_tasks").select("*").order("sort_order", { ascending: true }),
       supabase.from("weekly_assignments").select("*").order("week_start", { ascending: false }),
       supabase.from("acceptance_acts").select("*"),
+      supabase.from("budget_lines").select("*"),
+      supabase.from("customer_payments").select("object_id,amount"),
     ]);
+    const groupByObject = <T extends { object_id: string }>(rows: T[] | null): Map<string, T[]> => {
+      const m = new Map<string, T[]>();
+      (rows || []).forEach((r) => {
+        const list = m.get(r.object_id);
+        if (list) list.push(r);
+        else m.set(r.object_id, [r]);
+      });
+      return m;
+    };
+    // Финансы — дополнительный блок: если таблиц ещё нет, остальной дашборд работает как раньше.
+    setBudgetByObject(budgetRes.error ? new Map() : groupByObject(budgetRes.data as BudgetLine[]));
+    setPaymentsByObject(payRes.error ? new Map() : groupByObject(payRes.data as CustomerPayment[]));
 
     if (taskRes.error) {
       setBanner(dbErrorText(taskRes.error, "Не удалось загрузить график"));
@@ -177,6 +201,34 @@ export default function PortfolioHealth() {
     () => (selectedObjectId ? healths.filter((h) => h.object.id === selectedObjectId) : healths),
     [healths, selectedObjectId]
   );
+
+  const finances: ObjectFinance[] = useMemo(
+    () =>
+      objects.map((o) =>
+        computeObjectFinance(o, budgetByObject.get(o.id) || [], tasksByObject.get(o.id) || [], paymentsByObject.get(o.id) || [])
+      ),
+    [objects, budgetByObject, tasksByObject, paymentsByObject]
+  );
+  const visibleFinances = useMemo(
+    () => (selectedObjectId ? finances.filter((f) => f.object.id === selectedObjectId) : finances),
+    [finances, selectedObjectId]
+  );
+  /** Итог портфеля — только по объектам, где есть и договор, и бюджет. */
+  const financeTotal = useMemo(() => {
+    const ready = finances.filter((f) => f.resultForecast !== null);
+    const sum = (pick: (f: ObjectFinance) => number) => Math.round(ready.reduce((s, f) => s + pick(f), 0) * 100) / 100;
+    return {
+      count: ready.length,
+      contract: sum((f) => f.contract || 0),
+      plan: sum((f) => f.plan),
+      fact: sum((f) => f.fact),
+      forecast: sum((f) => f.forecast),
+      resultPlan: sum((f) => f.resultPlan || 0),
+      resultForecast: sum((f) => f.resultForecast || 0),
+      paid: sum((f) => f.paid),
+      cashGap: sum((f) => f.cashGap),
+    };
+  }, [finances]);
 
   const topRisks = useMemo(() => computeTopRisks(visibleHealths), [visibleHealths]);
 
@@ -373,6 +425,117 @@ export default function PortfolioHealth() {
           )}
         </div>
       </div>
+
+      <section className="section-block">
+        <h3 className="section-title">Финансы{selectedObject ? `: ${selectedObject.name}` : ""}</h3>
+        <p className="hint fin-hint">
+          Смета — наша себестоимость, договор — выручка. Прогноз затрат: по закрытым работам — факт, по остальным — не меньше
+          сметы; накладные — по смете до завершения объекта.
+        </p>
+        {!objects.length ? null : (
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Объект</th>
+                    <th>Договор</th>
+                    <th>Смета</th>
+                    <th>Факт затрат</th>
+                    <th>Прогноз затрат</th>
+                    <th title="Договор − смета: с каким результатом объект взят">Результат по смете</th>
+                    <th title="Договор − прогноз затрат: чем объект закончится при текущем раскладе">Результат прогноз</th>
+                    <th>Получено от заказчика</th>
+                    <th title="Плюс — объект финансируется из своих денег">Затраты − оплаты</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleFinances.map((f) => (
+                    <tr key={f.object.id} className="obj-row">
+                      <td className="name-cell">
+                        {f.object.name}
+                        {f.warnings.length > 0 && <div className="fin-warn">{f.warnings.join("; ")}</div>}
+                      </td>
+                      <td className="mono">{f.contract ? fmtMoney(f.contract) : "—"}</td>
+                      <td className="mono">{f.hasBudget ? fmtMoney(f.plan) : "—"}</td>
+                      <td className="mono">{f.hasBudget ? fmtMoney(f.fact) : "—"}</td>
+                      <td className="mono">{f.hasBudget ? fmtMoney(f.forecast) : "—"}</td>
+                      <td className={`mono${signClass(f.resultPlan)}`}>{fmtSigned(f.resultPlan)}</td>
+                      <td className={`mono${signClass(f.resultForecast)}`}>{fmtSigned(f.resultForecast)}</td>
+                      <td className="mono">{f.hasPayments ? fmtMoney(f.paid) : <span className="fin-muted">не внесено</span>}</td>
+                      <td className={`mono${f.hasPayments && f.cashGap > 0 ? " is-neg" : ""}`}>
+                        {f.hasPayments ? fmtMoney(f.cashGap) : <span className="fin-muted">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {!selectedObject && finances.length > 1 && (
+                  <tfoot>
+                    <tr className="bud-total-row">
+                      <td>
+                        Итого{" "}
+                        <span className="fin-muted">
+                          ({financeTotal.count} из {finances.length} — объекты с договором и бюджетом)
+                        </span>
+                      </td>
+                      <td className="mono">{fmtMoney(financeTotal.contract)}</td>
+                      <td className="mono">{fmtMoney(financeTotal.plan)}</td>
+                      <td className="mono">{fmtMoney(financeTotal.fact)}</td>
+                      <td className="mono">{fmtMoney(financeTotal.forecast)}</td>
+                      <td className={`mono${signClass(financeTotal.resultPlan)}`}>{fmtSigned(financeTotal.resultPlan)}</td>
+                      <td className={`mono${signClass(financeTotal.resultForecast)}`}>
+                        {fmtSigned(financeTotal.resultForecast)}
+                      </td>
+                      <td className="mono">{fmtMoney(financeTotal.paid)}</td>
+                      <td className="mono">{fmtMoney(financeTotal.cashGap)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+            <div className="cards">
+              {visibleFinances.map((f) => (
+                <div className="obj-card" key={f.object.id}>
+                  <div className="row1">
+                    <div className="cname">{f.object.name}</div>
+                    <span className={`mono fin-result${signClass(f.resultForecast)}`}>{fmtSigned(f.resultForecast)}</span>
+                  </div>
+                  <div className="cmeta">
+                    <span>Договор: {f.contract ? fmtMoney(f.contract) : "—"}</span>
+                    {f.hasBudget && <span>Смета: {fmtMoney(f.plan)}</span>}
+                    {f.hasBudget && <span>Факт: {fmtMoney(f.fact)}</span>}
+                    {f.hasBudget && <span>Прогноз затрат: {fmtMoney(f.forecast)}</span>}
+                    <span>
+                      По смете: <span className={signClass(f.resultPlan).trim()}>{fmtSigned(f.resultPlan)}</span>
+                    </span>
+                    <span>Получено: {f.hasPayments ? fmtMoney(f.paid) : "не внесено"}</span>
+                  </div>
+                  {f.warnings.length > 0 && <div className="fin-warn">{f.warnings.join("; ")}</div>}
+                </div>
+              ))}
+            </div>
+            {visibleFinances
+              .filter((f) => f.resultForecast !== null)
+              .map((f) => (
+                <p key={f.object.id} className="fin-note">
+                  <b>{f.object.name}:</b> по закрытым работам{" "}
+                  {f.lockedSaving >= 0 ? "экономия" : "перерасход"}{" "}
+                  <span className={signClass(f.lockedSaving).trim()}>{fmtSigned(f.lockedSaving)}</span> — это уже не
+                  изменится. Осталось потратить по смете {fmtMoney(f.remainingPlan)}.{" "}
+                  {f.toBreakEven > 0 ? (
+                    <>
+                      Чтобы выйти в ноль, на оставшемся нужно сэкономить{" "}
+                      <span className="is-neg">{fmtMoney(f.toBreakEven)}</span>
+                      {f.remainingPlan > 0 && ` (${fmtPercent((f.toBreakEven / f.remainingPlan) * 100)} остатка)`}.
+                    </>
+                  ) : (
+                    <>При текущем раскладе объект выходит в плюс.</>
+                  )}
+                </p>
+              ))}
+          </>
+        )}
+      </section>
 
       <section className="section-block">
         <h3 className="section-title">{selectedObject ? "Причины риска" : "Топ причин риска"}</h3>
