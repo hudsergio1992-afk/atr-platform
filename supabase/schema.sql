@@ -347,18 +347,19 @@ create table if not exists public.site_issues (
 create index if not exists site_issues_object_idx on public.site_issues (object_id, status);
 create index if not exists site_issues_task_idx on public.site_issues (task_id);
 
--- Хранилище фотоотчётов: публичный бакет (фото открываются по прямой ссылке
--- без авторизации — как в задании) с тем же анонимным доступом, что у таблиц.
+-- Хранилище фотоотчётов: закрытый бакет. Фото открываются по временным
+-- ссылкам и только для вошедших (вход по почте и паролю, Supabase Auth).
 insert into storage.buckets (id, name, public)
-values ('site-photos', 'site-photos', true)
-on conflict (id) do update set public = true;
+values ('site-photos', 'site-photos', false)
+on conflict (id) do update set public = false;
 
 drop policy if exists site_photos_anon_all on storage.objects;
-create policy site_photos_anon_all on storage.objects
-  for all to anon, authenticated
+drop policy if exists site_photos_auth_all on storage.objects;
+create policy site_photos_auth_all on storage.objects
+  for all to authenticated
   using (bucket_id = 'site-photos') with check (bucket_id = 'site-photos');
 
--- ── Доступ ───────────────────────────────────────────────────────────────────
+-- ── Доступ: только вошедшим (Supabase Auth). Анонимного доступа нет. ─────────
 alter table public.objects            enable row level security;
 alter table public.schedule_tasks     enable row level security;
 alter table public.weekly_assignments enable row level security;
@@ -376,61 +377,76 @@ alter table public.photo_reports    enable row level security;
 alter table public.site_issues      enable row level security;
 
 drop policy if exists objects_anon_all on public.objects;
-create policy objects_anon_all on public.objects
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists objects_auth_all on public.objects;
+create policy objects_auth_all on public.objects
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists schedule_tasks_anon_all on public.schedule_tasks;
-create policy schedule_tasks_anon_all on public.schedule_tasks
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists schedule_tasks_auth_all on public.schedule_tasks;
+create policy schedule_tasks_auth_all on public.schedule_tasks
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists weekly_assignments_anon_all on public.weekly_assignments;
-create policy weekly_assignments_anon_all on public.weekly_assignments
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists weekly_assignments_auth_all on public.weekly_assignments;
+create policy weekly_assignments_auth_all on public.weekly_assignments
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists weekly_items_anon_all on public.weekly_items;
-create policy weekly_items_anon_all on public.weekly_items
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists weekly_items_auth_all on public.weekly_items;
+create policy weekly_items_auth_all on public.weekly_items
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists stage_catalog_anon_all on public.stage_catalog;
-create policy stage_catalog_anon_all on public.stage_catalog
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists stage_catalog_auth_all on public.stage_catalog;
+create policy stage_catalog_auth_all on public.stage_catalog
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists acceptance_acts_anon_all on public.acceptance_acts;
-create policy acceptance_acts_anon_all on public.acceptance_acts
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists acceptance_acts_auth_all on public.acceptance_acts;
+create policy acceptance_acts_auth_all on public.acceptance_acts
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists work_log_entries_anon_all on public.work_log_entries;
-create policy work_log_entries_anon_all on public.work_log_entries
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists work_log_entries_auth_all on public.work_log_entries;
+create policy work_log_entries_auth_all on public.work_log_entries
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists material_certificates_anon_all on public.material_certificates;
-create policy material_certificates_anon_all on public.material_certificates
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists material_certificates_auth_all on public.material_certificates;
+create policy material_certificates_auth_all on public.material_certificates
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists suppliers_anon_all on public.suppliers;
-create policy suppliers_anon_all on public.suppliers
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists suppliers_auth_all on public.suppliers;
+create policy suppliers_auth_all on public.suppliers
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists supply_requests_anon_all on public.supply_requests;
-create policy supply_requests_anon_all on public.supply_requests
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists supply_requests_auth_all on public.supply_requests;
+create policy supply_requests_auth_all on public.supply_requests
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists supply_offers_anon_all on public.supply_offers;
-create policy supply_offers_anon_all on public.supply_offers
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists supply_offers_auth_all on public.supply_offers;
+create policy supply_offers_auth_all on public.supply_offers
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists budget_lines_anon_all on public.budget_lines;
-create policy budget_lines_anon_all on public.budget_lines
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists budget_lines_auth_all on public.budget_lines;
+create policy budget_lines_auth_all on public.budget_lines
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists customer_payments_anon_all on public.customer_payments;
-create policy customer_payments_anon_all on public.customer_payments
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists customer_payments_auth_all on public.customer_payments;
+create policy customer_payments_auth_all on public.customer_payments
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists photo_reports_anon_all on public.photo_reports;
-create policy photo_reports_anon_all on public.photo_reports
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists photo_reports_auth_all on public.photo_reports;
+create policy photo_reports_auth_all on public.photo_reports
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists site_issues_anon_all on public.site_issues;
-create policy site_issues_anon_all on public.site_issues
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists site_issues_auth_all on public.site_issues;
+create policy site_issues_auth_all on public.site_issues
+  for all to authenticated using (true) with check (true);
