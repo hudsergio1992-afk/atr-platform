@@ -893,3 +893,16 @@ td.is-deferred { color: var(--muted); font-weight: 500; }
 
 /* Подробности строк открываются двойным нажатием — без зума страницы на телефоне. */
 .obj-row, .obj-card, .accept-row, .wk-c, .gantt-name, .gantt-row { touch-action: manipulation; }
+
+/* ---- Вход ---- */
+.auth-user { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.auth-email { font-size: 12.5px; color: var(--muted); }
+.auth-card {
+    max-width: 380px; margin: 48px auto; padding: 24px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; gap: 14px;
+}
+.auth-card h2 { font-size: 20px; margin: 0; }
+.auth-card .hint { margin: 0; }
+.auth-card .banner { margin: 0; }
+.auth-submit { margin-left: 0; width: 100%; }
+.auth-submit:disabled { opacity: 0.6; cursor: default; }
