@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import ModuleNav from "@/components/ModuleNav";
+import AuthGate from "@/components/AuthGate";
 
 export const metadata: Metadata = {
   title: "Стройплатформа АТР",
@@ -12,19 +13,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       <body>
         <div className="shell">
-          <div className="topbar">
-            <div className="brand">
-              <span className="name">Стройплатформа АТР</span>
-              <span className="sub">ООО «АгроТехРешение»</span>
-            </div>
-            <span className="role-chip">
-              Роль: все роли (Руководство / РП / Прораб / Снабженец / Инженер ПТО)
-            </span>
-          </div>
+          <AuthGate>
+            <ModuleNav />
 
-          <ModuleNav />
-
-          {children}
+            {children}
+          </AuthGate>
         </div>
       </body>
     </html>
