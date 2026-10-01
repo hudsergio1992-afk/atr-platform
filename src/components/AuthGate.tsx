@@ -110,7 +110,7 @@ function LoginForm() {
   return (
     <form className="auth-card" onSubmit={submit}>
       <h2>Вход</h2>
-      <p className="hint">Доступ только для сотрудников. Учётку выдаёт руководитель проекта.</p>
+      <p className="hint">Доступ только для сотрудников. Учётную запись выдаёт администратор.</p>
       <div className="field">
         <label htmlFor="auth-email">Почта</label>
         <input
