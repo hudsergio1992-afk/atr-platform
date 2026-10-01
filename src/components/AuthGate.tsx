@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+import { exportAllToExcel } from "@/lib/exportAll";
 
 /**
  * Вход по почте и паролю (Supabase Auth). Без входа сайт показывает только форму.
@@ -46,6 +47,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           <span className="auth-email" title="Вы вошли как">
             {session.user.email}
           </span>
+          <ExportButton />
           <button className="btn btn-ghost btn-sm" onClick={() => supabase.auth.signOut()}>
             Выйти
           </button>
@@ -77,6 +79,34 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       {topbar}
       {children}
     </>
+  );
+}
+
+/** Резервная копия: все данные сайта одним Excel-файлом. */
+function ExportButton() {
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [note, setNote] = useState("");
+  async function run() {
+    setState("busy");
+    setNote("");
+    try {
+      const n = await exportAllToExcel();
+      setState("done");
+      setNote(`Выгружено записей: ${n}`);
+    } catch (e) {
+      setState("error");
+      setNote(e instanceof Error ? e.message : "Не удалось выгрузить");
+    }
+  }
+  return (
+    <button
+      className="btn btn-ghost btn-sm"
+      onClick={run}
+      disabled={state === "busy"}
+      title={note || "Резервная копия: все таблицы и список фото в один Excel-файл"}
+    >
+      {state === "busy" ? "Выгрузка…" : state === "done" ? "Выгружено ✓" : state === "error" ? "Ошибка выгрузки" : "Выгрузить всё в Excel"}
+    </button>
   );
 }
 
