@@ -31,8 +31,19 @@ const DISCREPANCY_THRESHOLD = 10;
 type View = "photos" | "issues";
 type IssueFilter = "unresolved" | "overdue" | "all" | IssueStatus;
 
-function publicPhotoUrl(path: string): string {
-  return supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+/** Фото открываются по временным ссылкам: работают и после закрытия хранилища — только для вошедших. */
+const PHOTO_URL_TTL_SEC = 6 * 60 * 60;
+
+async function signPhotoUrls(paths: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Set(paths)].filter(Boolean);
+  if (!unique.length) return out;
+  const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrls(unique, PHOTO_URL_TTL_SEC);
+  if (error || !data) return out;
+  data.forEach((d) => {
+    if (d.path && d.signedUrl) out.set(d.path, d.signedUrl);
+  });
+  return out;
 }
 
 /* ============================== Фотоотчёты ============================== */
@@ -90,6 +101,9 @@ export default function ControlModule() {
 
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
   const [reports, setReports] = useState<PhotoReport[]>([]);
+  /** Временные ссылки на фото по пути в хранилище. */
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
+  const photoUrl = (path: string): string | undefined => photoUrls.get(path);
   const [issues, setIssues] = useState<SiteIssue[]>([]);
 
   // ---- фотоотчёты ----
@@ -157,9 +171,12 @@ export default function ControlModule() {
     else if (issueRes.error && !needsSchemaSetup(issueRes.error)) setBanner(dbErrorText(issueRes.error, "Не удалось загрузить замечания"));
 
     setTasks((taskRes.data as ScheduleTask[]) || []);
-    setReports((repRes.data as PhotoReport[]) || []);
+    const reps = (repRes.data as PhotoReport[]) || [];
+    setReports(reps);
     setIssues((issueRes.data as SiteIssue[]) || []);
     setLoadingData(false);
+    const urls = await signPhotoUrls(reps.flatMap((r) => (r.photos || []).map((p) => p.path)));
+    if (id === objectIdRef.current) setPhotoUrls(urls);
   }, []);
 
   const checkPhotoBucket = useCallback(async () => {
@@ -591,7 +608,7 @@ export default function ControlModule() {
                     <div className="photo-cover">
                       {cover ? (
                         // eslint-disable-next-line @next/next/no-img-element -- превью из Supabase Storage, домен неизвестен заранее
-                        <img src={publicPhotoUrl(cover.path)} alt={cover.name} />
+                        <img src={photoUrl(cover.path)} alt={cover.name} />
                       ) : (
                         <div className="empty-state" style={{ padding: 0 }}>
                           нет фото
@@ -773,7 +790,7 @@ export default function ControlModule() {
               {existingPhotos.map((p) => (
                 <div className="photo-thumb" key={p.path}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- превью из Supabase Storage */}
-                  <img src={publicPhotoUrl(p.path)} alt={p.name} />
+                  <img src={photoUrl(p.path)} alt={p.name} />
                   <button
                     className="photo-thumb-remove"
                     type="button"
