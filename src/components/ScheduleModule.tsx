@@ -858,23 +858,53 @@ export default function ScheduleModule() {
     await loadTasks(objectId);
   }
 
-  /** Записывает фактическую стоимость закрытой работы в «Сметы и бюджет». Возвращает текст ошибки или null. */
+  /** Ближайший шифр выше по дереву: у подработ своего шифра нет, их статьи — у работы-родителя. */
+  function ancestorCodes(t: ScheduleTask): string[] {
+    const out: string[] = [];
+    let p = t.parent_id;
+    const seen = new Set<string>();
+    while (p && !seen.has(p)) {
+      seen.add(p);
+      const a = tasks.find((x) => x.id === p);
+      if (!a) break;
+      if (a.code) out.push(a.code);
+      p = a.parent_id;
+    }
+    return out;
+  }
+
+  /**
+   * Записывает фактическую стоимость закрытой работы в «Сметы и бюджет». Возвращает текст ошибки или null.
+   * Ноль — тоже факт: статья помечается «нулевой факт подтверждён», иначе бюджет считал бы,
+   * что факт просто забыли внести, и держал бы в прогнозе плановую сумму.
+   */
   async function saveClosingFact(
     c: { task: ScheduleTask; lines: CostByWork["lines"]; plan: number },
-    now: string
+    now: string,
+    comment: string
   ): Promise<string | null> {
+    const why = comment ? ` (затрат не было: ${comment})` : "";
     if (c.lines.length) {
       for (const l of c.lines) {
-        const next = Number(closeFactOf(l.id, Number(l.fact_amount)) || 0);
-        if (next === Number(l.fact_amount)) continue;
+        const raw = closeFactOf(l.id, Number(l.fact_amount)).trim();
+        const next = Number(raw || 0);
+        // Ноль подтверждён, если его вписали явно или всю работу закрыли без затрат с комментарием.
+        const zero = next === 0 && (raw !== "" || !!comment);
+        if (next === Number(l.fact_amount) && zero === !!l.zero_fact_confirmed) continue;
         const { error } = await supabase
           .from("budget_lines")
           .update({
             fact_amount: next,
+            zero_fact_confirmed: zero,
             updated_at: now,
             history: [
               ...(l.history || []),
-              { at: now, text: `Факт при закрытии работы: ${fmtMoney(l.fact_amount)} → ${fmtMoney(next)}` },
+              {
+                at: now,
+                text: `Факт при закрытии работы: ${fmtMoney(l.fact_amount)} → ${fmtMoney(next)}${
+                  zero ? "; нулевой факт подтверждён" + why : ""
+                }`,
+              },
             ],
           })
           .eq("id", l.id);
@@ -883,18 +913,28 @@ export default function ScheduleModule() {
       return null;
     }
     const value = Number(closeNewFact || 0);
-    if (!(value > 0)) return null;
+    if (!Number.isFinite(value) || value < 0) return null;
+    // Подработа без своего шифра: статья встаёт под шифр работы-родителя, а план
+    // в неё не пишется, если он уже есть в статьях родителя — иначе план задвоится.
+    const above = ancestorCodes(c.task);
+    const code = c.task.code || above[0] || null;
+    const planCovered = above.some((a) => (costByWork.get(a)?.plan || 0) > 0);
+    const plan = planCovered ? 0 : Number(c.task.cost_total) || 0;
     const { error } = await supabase.from("budget_lines").insert({
       object_id: objectId,
       section: "works",
-      name: closingLineName(c.task.code, c.task.name),
-      plan_amount: Number(c.task.cost_total) || 0,
+      name: closingLineName(code, c.task.name),
+      plan_amount: plan,
       fact_amount: value,
       forecast_amount: null,
-      note: "Заведена при закрытии работы в «Графике работ»",
+      zero_fact_confirmed: value === 0,
+      note:
+        "Заведена при закрытии работы в «Графике работ»" +
+        (planCovered ? "; план учтён в статьях работы " + above[0] : "") +
+        why,
       created_at: now,
       updated_at: now,
-      history: [{ at: now, text: `Статья заведена при закрытии работы, факт ${fmtMoney(value)}` }],
+      history: [{ at: now, text: `Статья заведена при закрытии работы, факт ${fmtMoney(value)}${why}` }],
     });
     return error ? dbErrorText(error, "Работа закрыта, но факт в «Сметах и бюджете» не записан") : null;
   }
@@ -1017,7 +1057,9 @@ export default function ScheduleModule() {
         setBanner(dbErrorText(error, "Не удалось сохранить этап"));
         setSchemaMissing(needsSchemaSetup(error));
       } else {
-        const budgetError = closing ? await saveClosingFact(closing, now) : null;
+        const budgetError = closing
+          ? await saveClosingFact(closing, now, closingTotal <= 0 ? form.closeComment.trim() : "")
+          : null;
         await applyRenumber(renumber);
         closePanel();
         await loadTasks(objectId);
