@@ -29,6 +29,12 @@ export interface ObjectFinance {
   lockedSaving: number;
   /** Смета незакрытых работ и накладных, ещё не потраченная. */
   remainingPlan: number;
+  /** Перерасход — все красные статьи, как в «Сметах и бюджете» (положительное число). */
+  overrun: number;
+  /** Экономия — все зелёные статьи, как в «Сметах и бюджете». */
+  saving: number;
+  /** Разница: экономия − перерасход (плюс — экономия). */
+  netDev: number;
   /** Сколько нужно сэкономить на оставшемся, чтобы выйти в ноль. */
   toBreakEven: number;
   /** Получено от заказчика. */
@@ -137,6 +143,8 @@ export function computeObjectFinance(
   let forecast = 0;
   let lockedSaving = 0;
   let remainingPlan = 0;
+  let overrun = 0;
+  let saving = 0;
   lines.forEach((l) => {
     const p = Number(l.plan_amount) || 0;
     const f = Number(l.fact_amount) || 0;
@@ -147,6 +155,13 @@ export function computeObjectFinance(
     // Факт закрытой работы окончателен: её экономия/перерасход уже не изменятся.
     if (rules.kind(l) === "counted" && (done || rules.isClosed(l))) lockedSaving += p - f;
     else remainingPlan += Math.max(0, lf - f);
+    // Красные/зелёные статьи — то же правило, что в итогах «Смет и бюджета»: только учтённые
+    // (закрытые работы и перерасход сразу); остаток, накладные и невнесённый факт — не входят.
+    if (rules.kind(l) === "counted") {
+      const d = rules.dev(l);
+      if (d !== null && d < 0) overrun += -d;
+      else if (d !== null) saving += d;
+    }
   });
 
   const contract = object.contract_amount !== null && object.contract_amount !== undefined ? Number(object.contract_amount) : null;
@@ -170,6 +185,9 @@ export function computeObjectFinance(
     resultForecast,
     lockedSaving: r2(lockedSaving),
     remainingPlan: r2(remainingPlan),
+    overrun: r2(overrun),
+    saving: r2(saving),
+    netDev: r2(r2(saving) - r2(overrun)),
     toBreakEven: resultForecast !== null && resultForecast < 0 ? r2(-resultForecast) : 0,
     paid: r2(paid),
     hasPayments: payments.length > 0,
