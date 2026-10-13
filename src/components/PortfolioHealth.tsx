@@ -56,6 +56,77 @@ const fmtSigned = (n: number | null): string =>
   n === null ? "—" : n === 0 ? "0 ₽" : `${n > 0 ? "+" : "−"}${fmtMoney(Math.abs(n))}`;
 const signClass = (n: number | null): string => (n === null || n === 0 ? "" : n < 0 ? " is-neg" : " is-pos");
 
+interface FinValues {
+  contract: number | null;
+  plan: number | null;
+  fact: number | null;
+  workDone: number | null;
+  forecast: number | null;
+  overrun: number | null;
+  saving: number | null;
+  netDev: number | null;
+  resultPlan: number | null;
+  resultForecast: number | null;
+  paid: number | null;
+  cashGap: number | null;
+}
+
+/** Финансы объекта одним экраном: четыре группы по 2–4 цифры, переносятся по ширине — без прокрутки вбок. */
+function FinBoard({ title, warnings, v, isTotal }: { title: string; warnings: string[]; v: FinValues; isTotal?: boolean }) {
+  const money = (n: number | null) => (n === null ? "—" : fmtMoney(n));
+  const row = (label: string, value: string, cls = "", hint?: string) => (
+    <div className="fin-row" title={hint}>
+      <span className="fin-l">{label}</span>
+      <span className={`fin-v mono${cls}`}>{value}</span>
+    </div>
+  );
+  return (
+    <div className={`fin-board${isTotal ? " is-total" : ""}`}>
+      <div className="fin-head">
+        <div>
+          <div className="fin-title">{title}</div>
+          {warnings.length > 0 && <div className="fin-warn">{warnings.join("; ")}</div>}
+        </div>
+        <div className="fin-big" title="Договор − прогноз затрат: чем объект закончится при текущем раскладе">
+          <span className="fin-l">Результат прогноз</span>
+          <span className={`mono${signClass(v.resultForecast)}`}>{fmtSigned(v.resultForecast)}</span>
+        </div>
+      </div>
+      <div className="fin-groups">
+        <div className="fin-group">
+          <div className="fin-gt">Себестоимость</div>
+          {row("Смета", money(v.plan))}
+          {row("Факт затрат", money(v.fact))}
+          {row("Выполнено работ", money(v.workDone), "", "Стоимость работ графика × % готовности")}
+          {row("Прогноз затрат", money(v.forecast))}
+        </div>
+        <div className="fin-group">
+          <div className="fin-gt">Смета против факта</div>
+          {row("Перерасход", v.overrun ? `−${fmtMoney(v.overrun)}` : "—", v.overrun ? " is-neg" : "", "Все красные статьи")}
+          {row("Экономия", v.saving ? `+${fmtMoney(v.saving)}` : "—", v.saving ? " is-pos" : "", "Все зелёные статьи")}
+          {row("Разница", fmtSigned(v.netDev), signClass(v.netDev), "Экономия − перерасход")}
+        </div>
+        <div className="fin-group">
+          <div className="fin-gt">Результат объекта</div>
+          {row("Договор", v.contract ? fmtMoney(v.contract) : "—")}
+          {row("По смете", fmtSigned(v.resultPlan), signClass(v.resultPlan), "Договор − смета")}
+          {row("Прогноз", fmtSigned(v.resultForecast), signClass(v.resultForecast), "Договор − прогноз затрат")}
+        </div>
+        <div className="fin-group">
+          <div className="fin-gt">Деньги заказчика</div>
+          {row("Получено", v.paid === null ? "не внесено" : fmtMoney(v.paid))}
+          {row(
+            v.cashGap !== null && v.cashGap > 0 ? "Вложено своих" : "Оплаты опережают затраты",
+            v.cashGap === null ? "—" : fmtMoney(Math.abs(v.cashGap)),
+            v.cashGap !== null && v.cashGap > 0 ? " is-neg" : "",
+            "Факт затрат − получено от заказчика"
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PortfolioHealth() {
   const dbl = useDoubleTap();
   const today = useToday();
@@ -448,121 +519,48 @@ export default function PortfolioHealth() {
         </p>
         {!objects.length ? null : (
           <>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Объект</th>
-                    <th>Договор</th>
-                    <th>Смета</th>
-                    <th>Факт затрат</th>
-                    <th title="Стоимость работ графика × % готовности — сколько работы сделано в деньгах">Выполнено работ</th>
-                    <th>Прогноз затрат</th>
-                    <th title="Как в «Сметах и бюджете»: сумма красных статей">Перерасход</th>
-                    <th title="Как в «Сметах и бюджете»: сумма зелёных статей">Экономия</th>
-                    <th title="Экономия − перерасход">Разница</th>
-                    <th title="Договор − смета: с каким результатом объект взят">Результат по смете</th>
-                    <th title="Договор − прогноз затрат: чем объект закончится при текущем раскладе">Результат прогноз</th>
-                    <th>Получено от заказчика</th>
-                    <th title="Плюс — объект финансируется из своих денег">Затраты − оплаты</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleFinances.map((f) => (
-                    <tr key={f.object.id} className="obj-row">
-                      <td className="name-cell">
-                        {f.object.name}
-                        {f.warnings.length > 0 && <div className="fin-warn">{f.warnings.join("; ")}</div>}
-                      </td>
-                      <td className="mono">{f.contract ? fmtMoney(f.contract) : "—"}</td>
-                      <td className="mono">{f.hasBudget ? fmtMoney(f.plan) : "—"}</td>
-                      <td className="mono">{f.hasBudget ? fmtMoney(f.fact) : "—"}</td>
-                      <td className="mono">{workDoneById.get(f.object.id) != null ? fmtMoney(workDoneById.get(f.object.id)) : "—"}</td>
-                      <td className="mono">{f.hasBudget ? fmtMoney(f.forecast) : "—"}</td>
-                      <td className={`mono${f.overrun > 0 ? " is-neg" : ""}`}>{f.overrun > 0 ? `−${fmtMoney(f.overrun)}` : "—"}</td>
-                      <td className={`mono${f.saving > 0 ? " is-pos" : ""}`}>{f.saving > 0 ? `+${fmtMoney(f.saving)}` : "—"}</td>
-                      <td className={`mono${signClass(f.hasBudget ? f.netDev : null)}`}>{f.hasBudget ? fmtSigned(f.netDev) : "—"}</td>
-                      <td className={`mono${signClass(f.resultPlan)}`}>{fmtSigned(f.resultPlan)}</td>
-                      <td className={`mono${signClass(f.resultForecast)}`}>{fmtSigned(f.resultForecast)}</td>
-                      <td className="mono">{f.hasPayments ? fmtMoney(f.paid) : <span className="fin-muted">не внесено</span>}</td>
-                      <td className={`mono${f.hasPayments && f.cashGap > 0 ? " is-neg" : ""}`}>
-                        {f.hasPayments ? fmtMoney(f.cashGap) : <span className="fin-muted">—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {!selectedObject && finances.length > 1 && (
-                  <tfoot>
-                    <tr className="bud-total-row">
-                      <td>
-                        Итого{" "}
-                        <span className="fin-muted">
-                          ({financeTotal.count} из {finances.length} — объекты с договором и бюджетом)
-                        </span>
-                      </td>
-                      <td className="mono">{fmtMoney(financeTotal.contract)}</td>
-                      <td className="mono">{fmtMoney(financeTotal.plan)}</td>
-                      <td className="mono">{fmtMoney(financeTotal.fact)}</td>
-                      <td className="mono">{fmtMoney(financeTotal.workDone)}</td>
-                      <td className="mono">{fmtMoney(financeTotal.forecast)}</td>
-                      <td className={`mono${financeTotal.overrun > 0 ? " is-neg" : ""}`}>
-                        {financeTotal.overrun > 0 ? `−${fmtMoney(financeTotal.overrun)}` : "—"}
-                      </td>
-                      <td className={`mono${financeTotal.saving > 0 ? " is-pos" : ""}`}>
-                        {financeTotal.saving > 0 ? `+${fmtMoney(financeTotal.saving)}` : "—"}
-                      </td>
-                      <td className={`mono${signClass(financeTotal.netDev)}`}>{fmtSigned(financeTotal.netDev)}</td>
-                      <td className={`mono${signClass(financeTotal.resultPlan)}`}>{fmtSigned(financeTotal.resultPlan)}</td>
-                      <td className={`mono${signClass(financeTotal.resultForecast)}`}>
-                        {fmtSigned(financeTotal.resultForecast)}
-                      </td>
-                      <td className="mono">
-                        {financeTotal.hasPayments ? fmtMoney(financeTotal.paid) : <span className="fin-muted">не внесено</span>}
-                      </td>
-                      <td className={`mono${financeTotal.hasPayments && financeTotal.cashGap > 0 ? " is-neg" : ""}`}>
-                        {financeTotal.hasPayments ? fmtMoney(financeTotal.cashGap) : <span className="fin-muted">—</span>}
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-            <div className="cards">
-              {visibleFinances.map((f) => (
-                <div className="obj-card" key={f.object.id}>
-                  <div className="row1">
-                    <div className="cname">{f.object.name}</div>
-                    <span className={`mono fin-result${signClass(f.resultForecast)}`}>{fmtSigned(f.resultForecast)}</span>
-                  </div>
-                  <div className="cmeta">
-                    <span>Договор: {f.contract ? fmtMoney(f.contract) : "—"}</span>
-                    {f.hasBudget && <span>Смета: {fmtMoney(f.plan)}</span>}
-                    {f.hasBudget && <span>Факт: {fmtMoney(f.fact)}</span>}
-                    {f.hasBudget && <span>Прогноз затрат: {fmtMoney(f.forecast)}</span>}
-                    {f.hasBudget && (
-                      <span>
-                        Перерасход: <span className={f.overrun > 0 ? "is-neg" : ""}>{f.overrun > 0 ? `−${fmtMoney(f.overrun)}` : "—"}</span>
-                      </span>
-                    )}
-                    {f.hasBudget && (
-                      <span>
-                        Экономия: <span className={f.saving > 0 ? "is-pos" : ""}>{f.saving > 0 ? `+${fmtMoney(f.saving)}` : "—"}</span>
-                      </span>
-                    )}
-                    {f.hasBudget && (
-                      <span>
-                        Разница: <span className={signClass(f.netDev).trim()}>{fmtSigned(f.netDev)}</span>
-                      </span>
-                    )}
-                    <span>
-                      По смете: <span className={signClass(f.resultPlan).trim()}>{fmtSigned(f.resultPlan)}</span>
-                    </span>
-                    <span>Получено: {f.hasPayments ? fmtMoney(f.paid) : "не внесено"}</span>
-                  </div>
-                  {f.warnings.length > 0 && <div className="fin-warn">{f.warnings.join("; ")}</div>}
-                </div>
-              ))}
-            </div>
+            {visibleFinances.map((f) => (
+              <FinBoard
+                key={f.object.id}
+                title={f.object.name}
+                warnings={f.warnings}
+                v={{
+                  contract: f.contract,
+                  plan: f.hasBudget ? f.plan : null,
+                  fact: f.hasBudget ? f.fact : null,
+                  workDone: workDoneById.get(f.object.id) ?? null,
+                  forecast: f.hasBudget ? f.forecast : null,
+                  overrun: f.hasBudget ? f.overrun : null,
+                  saving: f.hasBudget ? f.saving : null,
+                  netDev: f.hasBudget ? f.netDev : null,
+                  resultPlan: f.resultPlan,
+                  resultForecast: f.resultForecast,
+                  paid: f.hasPayments ? f.paid : null,
+                  cashGap: f.hasPayments ? f.cashGap : null,
+                }}
+              />
+            ))}
+            {!selectedObject && finances.length > 1 && (
+              <FinBoard
+                title="Итого по портфелю"
+                warnings={[`${financeTotal.count} из ${finances.length} — объекты с договором и бюджетом`]}
+                isTotal
+                v={{
+                  contract: financeTotal.contract,
+                  plan: financeTotal.plan,
+                  fact: financeTotal.fact,
+                  workDone: financeTotal.workDone,
+                  forecast: financeTotal.forecast,
+                  overrun: financeTotal.overrun,
+                  saving: financeTotal.saving,
+                  netDev: financeTotal.netDev,
+                  resultPlan: financeTotal.resultPlan,
+                  resultForecast: financeTotal.resultForecast,
+                  paid: financeTotal.hasPayments ? financeTotal.paid : null,
+                  cashGap: financeTotal.hasPayments ? financeTotal.cashGap : null,
+                }}
+              />
+            )}
             {visibleFinances
               .filter((f) => f.resultForecast !== null)
               .map((f) => (
