@@ -15,6 +15,7 @@ import {
 } from "@/lib/types";
 import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
+import WorkbookImport from "@/components/WorkbookImport";
 
 interface FormState {
   name: string;
@@ -111,6 +112,8 @@ export default function ObjectsModule() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Объект, в который загружается книга (ГПР, смета, ГПМ). */
+  const [bookFor, setBookFor] = useState<ConstructionObject | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -276,6 +279,16 @@ export default function ObjectsModule() {
               }}
             >
               Изменить
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              title="ГПР, коммерческая смета и ГПМ по форме АТР-КО-01"
+              onClick={(e) => {
+                e.stopPropagation();
+                setBookFor(o);
+              }}
+            >
+              Загрузить книгу объекта
             </button>
             {pendingDeleteId === o.id ? (
               <button
@@ -458,6 +471,19 @@ export default function ObjectsModule() {
         )}
       </div>
 
+      {bookFor && (
+        <>
+          <div className="overlay show" onClick={() => setBookFor(null)} />
+          <WorkbookImport
+            object={bookFor}
+            onClose={() => setBookFor(null)}
+            onDone={(message) => {
+              setBookFor(null);
+              setBanner(message);
+            }}
+          />
+        </>
+      )}
       <div className={`overlay${panelOpen ? " show" : ""}`} onClick={closePanel} />
       <div className={`panel${panelOpen ? " show" : ""}`}>
         <div className="panel-head">
