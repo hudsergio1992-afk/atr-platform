@@ -915,3 +915,18 @@ body:has(.panel.show) .banner.show {
     box-shadow: var(--shadow); border: 1px solid var(--st-warn-ink);
     cursor: pointer;
 }
+
+/* Финансы на дашборде: группы цифр вместо широкой таблицы — переносятся по ширине, без прокрутки вбок. */
+.fin-board { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.fin-board.is-total { border-width: 2px; }
+.fin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.fin-title { font-weight: 600; font-size: 14.5px; }
+.fin-big { display: flex; flex-direction: column; align-items: flex-end; }
+.fin-big .mono { font-size: 20px; font-weight: 700; }
+.fin-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px 16px; }
+.fin-group { border-top: 1px solid var(--border); padding-top: 6px; min-width: 0; }
+.fin-gt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 2px; }
+.fin-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-size: 13px; }
+.fin-l { color: var(--muted); font-size: 12.5px; }
+.fin-v { white-space: nowrap; text-align: right; }
+.fin-v.is-neg, .fin-big .is-neg { color: var(--st-bad-ink); font-weight: 600; }
