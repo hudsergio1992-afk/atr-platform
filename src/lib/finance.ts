@@ -1,5 +1,6 @@
 import { BudgetLine, ConstructionObject, CustomerPayment, ScheduleTask } from "@/lib/types";
 import { workCodeOf } from "@/lib/zeroCost";
+import { buildTree, flattenTree } from "@/lib/schedule";
 
 /**
  * Финансы объекта для дашборда.
@@ -102,14 +103,21 @@ export function makeLineRules(progress: Map<string, number>, names: Map<string, 
   return { isOverhead, isClosed, kind, dev, forecast };
 }
 
-/** Прогресс и названия работ графика по шифру — вход для makeLineRules. */
-export function scheduleMaps(tasks: Pick<ScheduleTask, "code" | "name" | "progress_fact">[]) {
+/**
+ * Прогресс и названия работ графика по шифру — вход для makeLineRules.
+ * У работы с подработами % берётся свёрткой подработ, как в «Графике работ»:
+ * собственный % такой строки в базе не ведётся и остаётся 0, хотя все подработы закрыты.
+ * Даты на это не влияют — закрыта работа или нет, решает только % готовности.
+ */
+export function scheduleMaps(tasks: ScheduleTask[]) {
   const progress = new Map<string, number>();
   const names = new Map<string, string>();
-  tasks.forEach((t) => {
-    if (!t.code) return;
-    progress.set(t.code, Number(t.progress_fact) || 0);
-    names.set(t.code, t.name);
+  const today = new Date().toISOString().slice(0, 10);
+  flattenTree(buildTree(tasks, today)).forEach((n) => {
+    const code = n.task.code;
+    if (!code) return;
+    progress.set(code, Number(n.progressFact) || 0);
+    names.set(code, n.task.name);
   });
   return { progress, names };
 }
