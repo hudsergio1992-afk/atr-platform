@@ -930,3 +930,13 @@ body:has(.panel.show) .banner.show {
 .fin-l { color: var(--muted); font-size: 12.5px; }
 .fin-v { white-space: nowrap; text-align: right; }
 .fin-v.is-neg, .fin-big .is-neg { color: var(--st-bad-ink); font-weight: 600; }
+
+/* Загрузка книги объекта */
+.wb-block { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.wb-check { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; cursor: pointer; }
+.wb-block .hint { margin: 6px 0; }
+.wb-block details summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+.wb-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 6px; }
+.wb-table td { padding: 3px 6px; border-top: 1px solid var(--border); vertical-align: top; }
+.wb-table td.mono { white-space: nowrap; }
+.wb-block .is-neg { color: var(--st-bad-ink); font-weight: 600; }
