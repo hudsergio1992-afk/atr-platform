@@ -6,6 +6,7 @@ import { dbErrorText } from "@/lib/dbError";
 import { BudgetLine, ConstructionObject, HistoryEntry, ScheduleTask, SupplyRequest, BUDGET_SECTION_LABEL } from "@/lib/types";
 import { ACTION_LABEL, buildWorkbookPlan, Issue, WorkbookPlan } from "@/lib/importWorkbook";
 import { fmtDate, fmtMoney, plural } from "@/lib/format";
+import { downloadWorkbookForm } from "@/lib/workbookForm";
 
 interface Props {
   object: ConstructionObject;
@@ -234,6 +235,21 @@ export default function WorkbookImport({ object, onClose, onDone }: Props) {
 
   const anyPart = plan && (parts.gpr || parts.smeta || parts.gpm);
 
+  /** Пустая книга с объектом во второй строке листов. */
+  async function downloadForm() {
+    setError(null);
+    setBusy(true);
+    try {
+      const contract = object.contract_number
+        ? ` Договор ${object.contract_number}${object.contract_date ? ` от ${fmtDate(object.contract_date)}` : ""}`
+        : "";
+      await downloadWorkbookForm(`${object.name} — ${object.address}.${contract}`, new Date().toISOString().slice(0, 10));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Форма не скачалась");
+    }
+    setBusy(false);
+  }
+
   const block = (part: Part, title: string, found: boolean, errors: Issue[], children: React.ReactNode) => (
     <div className="wb-block">
       <label className="wb-check">
@@ -262,14 +278,17 @@ export default function WorkbookImport({ object, onClose, onDone }: Props) {
       </div>
       <div className="panel-body">
         <p className="hint" style={{ marginTop: 0 }}>
-          Загрузите книгу по форме АТР-КО-01: ГПР уйдёт в «График работ» (потоки станут разделами), коммерческая
-          смета — в «Сметы и бюджет», ГПМ — заявками в «Снабжение». Перед записью покажу, что создастся и что
-          обновится; ничего не удаляется, факт затрат не трогается. Пустая форма — файл «АТР-КО-01 Книга объекта.xlsx»,
-          лист «Как заполнять» в нём объясняет правила.
+          1) Скачайте форму книги — объект в ней уже подставлен. 2) Заполните её (правила — на листе «Как заполнять»).
+          3) Загрузите заполненную книгу: ГПР уйдёт в «График работ» (потоки станут разделами), коммерческая смета — в
+          «Сметы и бюджет», ГПМ — заявками в «Снабжение». Перед записью покажу, что создастся и что обновится; ничего
+          не удаляется, факт затрат не трогается.
         </p>
         <div className="setup-actions">
+          <button className="btn btn-ghost" onClick={downloadForm} disabled={busy}>
+            Скачать форму книги
+          </button>
           <button className="btn btn-primary" style={{ marginLeft: 0 }} onClick={() => fileRef.current?.click()} disabled={busy}>
-            Выбрать файл
+            Загрузить заполненную книгу
           </button>
           <input
             ref={fileRef}
