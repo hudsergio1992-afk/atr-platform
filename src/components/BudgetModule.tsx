@@ -11,6 +11,7 @@ import {
   ConstructionObject,
   CustomerPayment,
   HistoryEntry,
+  ScheduleTask,
 } from "@/lib/types";
 import { fmtDate, fmtDateTime, fmtMoney, plural } from "@/lib/format";
 import { OBJECT_KEY, readSetting, writeSetting } from "@/lib/useClient";
@@ -21,7 +22,7 @@ const LS_ORDER_KEY = "atr.budget.order";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
 import { workCodeOf } from "@/lib/zeroCost";
-import { LineRules, makeLineRules } from "@/lib/finance";
+import { LineRules, makeLineRules, scheduleMaps } from "@/lib/finance";
 import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
@@ -170,7 +171,7 @@ export default function BudgetModule() {
       supabase.from("customer_payments").select("*").eq("object_id", id).order("payment_date", { ascending: false }),
       supabase.from("acceptance_acts").select("amount").eq("object_id", id).eq("status", "signed"),
       supabase.from("supply_requests").select("order_amount,status").eq("object_id", id).in("status", ["ordered", "delivered"]),
-      supabase.from("schedule_tasks").select("code,name,progress_fact").eq("object_id", id),
+      supabase.from("schedule_tasks").select("*").eq("object_id", id),
     ]);
     if (id !== objectIdRef.current) return;
     const missing = needsSchemaSetup(lineRes.error) || needsSchemaSetup(payRes.error);
@@ -179,15 +180,10 @@ export default function BudgetModule() {
     else if (payRes.error && !needsSchemaSetup(payRes.error)) setBanner(dbErrorText(payRes.error, "Не удалось загрузить платежи"));
 
     setLines((lineRes.data as BudgetLine[]) || []);
-    const taskRows = (taskRes.data as { code: string | null; name: string; progress_fact: number | null }[]) || [];
-    setWorkNames(new Map(taskRows.filter((t) => t.code).map((t) => [t.code as string, t.name])));
-    setProgressByCode(
-      new Map(
-        taskRows
-          .filter((t) => t.code)
-          .map((t) => [t.code as string, Number(t.progress_fact) || 0])
-      )
-    );
+    // % по шифру — со свёрткой подработ, как в графике (общее правило с дашбордом).
+    const maps = scheduleMaps((taskRes.data as ScheduleTask[]) || []);
+    setWorkNames(maps.names);
+    setProgressByCode(maps.progress);
     setPayments((payRes.data as CustomerPayment[]) || []);
     setSignedActsSum(
       needsSchemaSetup(actRes.error)
