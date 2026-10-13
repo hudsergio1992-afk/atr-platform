@@ -282,13 +282,13 @@ export default function ObjectsModule() {
             </button>
             <button
               className="btn btn-sm btn-ghost"
-              title="ГПР, коммерческая смета и ГПМ по форме АТР-КО-01"
+              title="Скачать форму книги (ГПР, смета, ГПМ) и загрузить заполненную"
               onClick={(e) => {
                 e.stopPropagation();
                 setBookFor(o);
               }}
             >
-              Загрузить книгу объекта
+              Книга объекта: скачать / загрузить
             </button>
             {pendingDeleteId === o.id ? (
               <button
