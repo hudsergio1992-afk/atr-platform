@@ -232,6 +232,9 @@ export default function PortfolioHealth() {
       fact: sum((f) => f.fact),
       workDone: sum((f) => workDoneById.get(f.object.id) || 0),
       forecast: sum((f) => f.forecast),
+      overrun: sum((f) => f.overrun),
+      saving: sum((f) => f.saving),
+      netDev: sum((f) => f.netDev),
       resultPlan: sum((f) => f.resultPlan || 0),
       resultForecast: sum((f) => f.resultForecast || 0),
       paid: sum((f) => f.paid),
@@ -455,6 +458,9 @@ export default function PortfolioHealth() {
                     <th>Факт затрат</th>
                     <th title="Стоимость работ графика × % готовности — сколько работы сделано в деньгах">Выполнено работ</th>
                     <th>Прогноз затрат</th>
+                    <th title="Как в «Сметах и бюджете»: сумма красных статей">Перерасход</th>
+                    <th title="Как в «Сметах и бюджете»: сумма зелёных статей">Экономия</th>
+                    <th title="Экономия − перерасход">Разница</th>
                     <th title="Договор − смета: с каким результатом объект взят">Результат по смете</th>
                     <th title="Договор − прогноз затрат: чем объект закончится при текущем раскладе">Результат прогноз</th>
                     <th>Получено от заказчика</th>
@@ -473,6 +479,9 @@ export default function PortfolioHealth() {
                       <td className="mono">{f.hasBudget ? fmtMoney(f.fact) : "—"}</td>
                       <td className="mono">{workDoneById.get(f.object.id) != null ? fmtMoney(workDoneById.get(f.object.id)) : "—"}</td>
                       <td className="mono">{f.hasBudget ? fmtMoney(f.forecast) : "—"}</td>
+                      <td className={`mono${f.overrun > 0 ? " is-neg" : ""}`}>{f.overrun > 0 ? `−${fmtMoney(f.overrun)}` : "—"}</td>
+                      <td className={`mono${f.saving > 0 ? " is-pos" : ""}`}>{f.saving > 0 ? `+${fmtMoney(f.saving)}` : "—"}</td>
+                      <td className={`mono${signClass(f.hasBudget ? f.netDev : null)}`}>{f.hasBudget ? fmtSigned(f.netDev) : "—"}</td>
                       <td className={`mono${signClass(f.resultPlan)}`}>{fmtSigned(f.resultPlan)}</td>
                       <td className={`mono${signClass(f.resultForecast)}`}>{fmtSigned(f.resultForecast)}</td>
                       <td className="mono">{f.hasPayments ? fmtMoney(f.paid) : <span className="fin-muted">не внесено</span>}</td>
@@ -496,6 +505,13 @@ export default function PortfolioHealth() {
                       <td className="mono">{fmtMoney(financeTotal.fact)}</td>
                       <td className="mono">{fmtMoney(financeTotal.workDone)}</td>
                       <td className="mono">{fmtMoney(financeTotal.forecast)}</td>
+                      <td className={`mono${financeTotal.overrun > 0 ? " is-neg" : ""}`}>
+                        {financeTotal.overrun > 0 ? `−${fmtMoney(financeTotal.overrun)}` : "—"}
+                      </td>
+                      <td className={`mono${financeTotal.saving > 0 ? " is-pos" : ""}`}>
+                        {financeTotal.saving > 0 ? `+${fmtMoney(financeTotal.saving)}` : "—"}
+                      </td>
+                      <td className={`mono${signClass(financeTotal.netDev)}`}>{fmtSigned(financeTotal.netDev)}</td>
                       <td className={`mono${signClass(financeTotal.resultPlan)}`}>{fmtSigned(financeTotal.resultPlan)}</td>
                       <td className={`mono${signClass(financeTotal.resultForecast)}`}>
                         {fmtSigned(financeTotal.resultForecast)}
@@ -523,6 +539,21 @@ export default function PortfolioHealth() {
                     {f.hasBudget && <span>Смета: {fmtMoney(f.plan)}</span>}
                     {f.hasBudget && <span>Факт: {fmtMoney(f.fact)}</span>}
                     {f.hasBudget && <span>Прогноз затрат: {fmtMoney(f.forecast)}</span>}
+                    {f.hasBudget && (
+                      <span>
+                        Перерасход: <span className={f.overrun > 0 ? "is-neg" : ""}>{f.overrun > 0 ? `−${fmtMoney(f.overrun)}` : "—"}</span>
+                      </span>
+                    )}
+                    {f.hasBudget && (
+                      <span>
+                        Экономия: <span className={f.saving > 0 ? "is-pos" : ""}>{f.saving > 0 ? `+${fmtMoney(f.saving)}` : "—"}</span>
+                      </span>
+                    )}
+                    {f.hasBudget && (
+                      <span>
+                        Разница: <span className={signClass(f.netDev).trim()}>{fmtSigned(f.netDev)}</span>
+                      </span>
+                    )}
                     <span>
                       По смете: <span className={signClass(f.resultPlan).trim()}>{fmtSigned(f.resultPlan)}</span>
                     </span>
