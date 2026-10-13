@@ -13,6 +13,7 @@ export interface WorkBudgetLine {
   name: string;
   plan_amount: number;
   fact_amount: number;
+  zero_fact_confirmed?: boolean;
   history: { at: string; text: string }[];
 }
 
@@ -36,7 +37,7 @@ export async function loadCostByWork(objectId: string): Promise<Map<string, Cost
   if (!objectId) return out;
   const { data, error } = await supabase
     .from("budget_lines")
-    .select("id,name,plan_amount,fact_amount,history")
+    .select("id,name,plan_amount,fact_amount,zero_fact_confirmed,history")
     .eq("object_id", objectId)
     .order("name");
   // Бюджета нет или он недоступен — считаем, что статей у работ нет.
@@ -52,10 +53,14 @@ export async function loadCostByWork(objectId: string): Promise<Map<string, Cost
   return out;
 }
 
-/** Внесён ли факт затрат по работе: есть статьи и по ним потрачено больше нуля. */
+/**
+ * Внесён ли факт затрат по работе: есть статьи и по ним потрачено больше нуля,
+ * либо у каждой статьи факт внесён или подтверждён нулевым (затрат не было).
+ */
 export function workFactEntered(code: string | null, costs: Map<string, CostByWork>): boolean {
   const c = code ? costs.get(code) : undefined;
-  return !!c && c.fact > 0;
+  if (!c || !c.lines.length) return false;
+  return c.fact > 0 || c.lines.every((l) => Number(l.fact_amount) > 0 || !!l.zero_fact_confirmed);
 }
 
 /**
