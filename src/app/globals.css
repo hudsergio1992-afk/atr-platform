@@ -906,3 +906,12 @@ td.is-deferred { color: var(--muted); font-weight: 500; }
 .auth-card .banner { margin: 0; }
 .auth-submit { margin-left: 0; width: 100%; }
 .auth-submit:disabled { opacity: 0.6; cursor: default; }
+
+/* Сообщение страницы при открытой боковой панели: иначе оно остаётся под затемнением,
+   и кажется, что «Сохранить» ничего не делает. Показываем его над кнопками панели. */
+body:has(.panel.show) .banner.show {
+    position: fixed; z-index: 60; right: 12px; bottom: 76px;
+    width: min(416px, calc(100vw - 24px)); margin: 0;
+    box-shadow: var(--shadow); border: 1px solid var(--st-warn-ink);
+    cursor: pointer;
+}
