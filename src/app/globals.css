@@ -940,3 +940,12 @@ body:has(.panel.show) .banner.show {
 .wb-table td { padding: 3px 6px; border-top: 1px solid var(--border); vertical-align: top; }
 .wb-table td.mono { white-space: nowrap; }
 .wb-block .is-neg { color: var(--st-bad-ink); font-weight: 600; }
+
+/* Смета: сворачиваемые группы, как в графике */
+.bud-fold { display: flex; gap: 6px; justify-content: flex-end; margin: 0 0 6px; }
+.bud-group-head { cursor: pointer; }
+.bud-group-head td { vertical-align: middle; }
+.bud-group-head .bud-head-in { display: flex; align-items: center; gap: 4px; }
+.bud-group-head.is-sub td { background: var(--surface); text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13px; padding-top: 4px; padding-bottom: 4px; }
+.bud-group-foot.is-sub td { background: var(--surface); font-weight: 500; font-size: 12.5px; }
+.bud-count { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: none; }
