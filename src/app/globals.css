@@ -942,7 +942,7 @@ body:has(.panel.show) .banner.show {
 .wb-block .is-neg { color: var(--st-bad-ink); font-weight: 600; }
 
 /* Смета: сворачиваемые группы, как в графике */
-.bud-fold { display: flex; gap: 6px; justify-content: flex-end; margin: 0 0 6px; }
+.bud-fold { display: flex; width: fit-content; margin: 0 0 6px auto; }
 .bud-group-head { cursor: pointer; }
 .bud-group-head td { vertical-align: middle; }
 .bud-group-head .bud-head-in { display: flex; align-items: center; gap: 4px; }
