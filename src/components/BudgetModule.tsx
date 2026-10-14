@@ -791,6 +791,8 @@ function LinesTable({
   onDelete: (id: string) => void;
 }) {
   const dbl = useDoubleTap();
+  /** Свёрнутые группы; null — ещё не трогали (всё свёрнуто). */
+  const [collapsed, setCollapsed] = useState<Set<string> | null>(null);
   function renderDetail(l: BudgetLine) {
     const history = (l.history || []).slice().reverse();
     const forecast = rules.forecast(l);
@@ -978,7 +980,13 @@ function LinesTable({
   /** Натуральный порядок шифров: 2.1 < 2.10 < 10.1. */
   const byName = (a: BudgetLine, b: BudgetLine) => a.name.localeCompare(b.name, "ru", { numeric: true });
   const stageOf = (l: BudgetLine): string => workCodeOf(l.name)?.split(".")[0] ?? "";
-  const scheduleGroups = (() => {
+  /** Работа второго уровня: «7.3» для «7.3 …» и «7.3.1 …»; у статей самого этапа («7 …») — "". */
+  const workOf = (l: BudgetLine): string => {
+    const parts = workCodeOf(l.name)?.split(".") ?? [];
+    return parts.length >= 2 ? parts.slice(0, 2).join(".") : "";
+  };
+  type Group = { key: string; label: string; lines: BudgetLine[]; works: { key: string; lines: BudgetLine[] }[]; direct: BudgetLine[] };
+  const scheduleGroups: Group[] = (() => {
     const all = visibleSections.flatMap((s) => bySection.get(s)?.lines || []);
     const m = new Map<string, BudgetLine[]>();
     all.forEach((l) => {
@@ -989,10 +997,104 @@ function LinesTable({
     });
     return [...m.entries()]
       .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : Number(a) - Number(b)))
-      .map(([k, ls]) => ({ key: k, lines: ls.sort(byName) }));
+      .map(([k, ls]) => {
+        const sorted = ls.sort(byName);
+        // Внутри этапа — работы (7.1, 7.3 …) своими сворачиваемыми группами, как подэтапы в графике.
+        const wm = new Map<string, BudgetLine[]>();
+        const direct: BudgetLine[] = [];
+        sorted.forEach((l) => {
+          const w = k ? workOf(l) : "";
+          if (!w) direct.push(l);
+          else {
+            const arr = wm.get(w);
+            if (arr) arr.push(l);
+            else wm.set(w, [l]);
+          }
+        });
+        const works = [...wm.entries()]
+          .sort(([a], [b]) => a.localeCompare(b, "ru", { numeric: true }))
+          .map(([wk, wl]) => ({ key: wk, lines: wl }));
+        return {
+          key: `st-${k}`,
+          label: k ? `${k} ${workNames.get(k) || ""}`.trim() : "Без шифра работы",
+          lines: sorted,
+          works,
+          direct,
+        };
+      });
   })();
+  const sectionGroups: Group[] = visibleSections
+    .map((sec) => ({ sec, v: bySection.get(sec)! }))
+    .filter(({ v }) => v && v.lines.length > 0)
+    .map(({ sec, v }) => ({ key: `sec-${sec}`, label: BUDGET_SECTION_LABEL[sec], lines: v.lines.slice().sort(byName), works: [], direct: v.lines.slice().sort(byName) }));
+  const groups = linesOrder === "schedule" ? scheduleGroups : sectionGroups;
+
+  // Свёрнутые группы: по умолчанию свёрнуто всё, как в графике (видны разделы с суммами).
+  const allKeys = groups.flatMap((g) => [g.key, ...g.works.filter((w) => w.lines.length > 1).map((w) => `${g.key}/${w.key}`)]);
+  const shut = collapsed ?? new Set(allKeys);
+  const toggle = (k: string) => {
+    const next = new Set(shut);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    setCollapsed(next);
+  };
+  const sums = (ls: BudgetLine[]) => {
+    const r = (pick: (l: BudgetLine) => number) => Math.round(ls.reduce((acc, l) => acc + pick(l), 0) * 100) / 100;
+    return { plan: r((l) => l.plan_amount), fact: r((l) => l.fact_amount), forecast: r((l) => rules.forecast(l)), dev: sectionDev(ls) };
+  };
+  const sumCells = (ls: BudgetLine[]) => {
+    const t = sums(ls);
+    return (
+      <>
+        <td className="mono">{fmtMoney(t.plan)}</td>
+        <td className="mono">{fmtMoney(t.fact)}</td>
+        <td className="mono">{fmtMoney(t.forecast)}</td>
+        <td className={`mono${devClass(t.dev)}`}>{fmtDev(t.dev)}</td>
+      </>
+    );
+  };
+  /** Заголовок группы: стрелка и название; свёрнутая группа показывает суммы прямо в заголовке. */
+  const groupHead = (k: string, label: string, ls: BudgetLine[], level: number) => {
+    const isShut = shut.has(k);
+    return (
+      <tr className={`bud-group-head${level ? " is-sub" : ""}`} onClick={() => toggle(k)}>
+        <td colSpan={isShut ? 1 : 5} style={{ paddingLeft: 6 + level * 22 }}>
+          <span className="bud-head-in">
+            <button
+              className="sch-caret"
+              aria-label={isShut ? "Развернуть" : "Свернуть"}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle(k);
+              }}
+            >
+              {isShut ? "▸" : "▾"}
+            </button>
+            <span>{label}</span>
+            <span className="bud-count">{ls.length}</span>
+          </span>
+        </td>
+        {isShut && sumCells(ls)}
+      </tr>
+    );
+  };
+  const groupFoot = (label: string, ls: BudgetLine[], level: number) => (
+    <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
+      <td style={{ paddingLeft: 14 + level * 22 }}>{label}</td>
+      {sumCells(ls)}
+    </tr>
+  );
 
   return (
+    <>
+    <div className="bud-fold">
+      <button className="seg-btn" onClick={() => setCollapsed(new Set())} disabled={shut.size === 0}>
+        Развернуть все
+      </button>
+      <button className="seg-btn" onClick={() => setCollapsed(new Set(allKeys))} disabled={allKeys.every((k) => shut.has(k))}>
+        Свернуть все
+      </button>
+    </div>
     <div className="table-wrap">
       <table>
         <thead>
@@ -1005,49 +1107,33 @@ function LinesTable({
           </tr>
         </thead>
         <tbody>
-          {linesOrder === "schedule" && scheduleGroups.map((g) => {
-            const sum = (pick: (l: BudgetLine) => number) =>
-              Math.round(g.lines.reduce((acc, l) => acc + pick(l), 0) * 100) / 100;
-            return (
-              <Fragment key={`st-${g.key}`}>
-                <tr className="bud-group-head">
-                  <td colSpan={5}>
-                    {g.key ? `${g.key} ${workNames.get(g.key) || ""}`.trim() : "Без шифра работы"}
-                  </td>
-                </tr>
-                {g.lines.map((l) => renderRow(l, true))}
-                <tr className="bud-group-foot">
-                  <td>Подытог</td>
-                  <td className="mono">{fmtMoney(sum((l) => l.plan_amount))}</td>
-                  <td className="mono">{fmtMoney(sum((l) => l.fact_amount))}</td>
-                  <td className="mono">{fmtMoney(sum((l) => rules.forecast(l)))}</td>
-                  <td className={`mono${devClass(sectionDev(g.lines))}`}>{fmtDev(sectionDev(g.lines))}</td>
-                </tr>
-              </Fragment>
-            );
-          })}
-          {linesOrder === "sections" && visibleSections.map((s) => {
-            const v = bySection.get(s)!;
-            if (v.lines.length === 0) return null;
-            return (
-              <Fragment key={s}>
-                <tr className="bud-group-head">
-                  <td colSpan={5}>{BUDGET_SECTION_LABEL[s]}</td>
-                </tr>
-                {v.lines
-                  .slice()
-                  .sort(byName)
-                  .map((l) => renderRow(l, false))}
-                <tr className="bud-group-foot">
-                  <td>Подытог</td>
-                  <td className="mono">{fmtMoney(v.plan)}</td>
-                  <td className="mono">{fmtMoney(v.fact)}</td>
-                  <td className="mono">{fmtMoney(v.forecast)}</td>
-                  <td className={`mono${devClass(sectionDev(v.lines))}`}>{fmtDev(sectionDev(v.lines))}</td>
-                </tr>
-              </Fragment>
-            );
-          })}
+          {groups.map((g) => (
+            <Fragment key={g.key}>
+              {groupHead(g.key, g.label, g.lines, 0)}
+              {!shut.has(g.key) && (
+                <>
+                  {g.direct.map((l) => renderRow(l, linesOrder === "schedule"))}
+                  {g.works.map((w) => {
+                    if (w.lines.length === 1) return renderRow(w.lines[0], true);
+                    const wk = `${g.key}/${w.key}`;
+                    const label = `${w.key} ${workNames.get(w.key) || ""}`.trim();
+                    return (
+                      <Fragment key={wk}>
+                        {groupHead(wk, label, w.lines, 1)}
+                        {!shut.has(wk) && (
+                          <>
+                            {w.lines.map((l) => renderRow(l, true))}
+                            {groupFoot(`Итого по работе ${w.key}`, w.lines, 1)}
+                          </>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  {groupFoot("Подытог", g.lines, 0)}
+                </>
+              )}
+            </Fragment>
+          ))}
         </tbody>
         <tfoot>
           <tr className="bud-total-row">
@@ -1099,6 +1185,7 @@ function LinesTable({
         </tfoot>
       </table>
     </div>
+    </>
   );
 }
 
