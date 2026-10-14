@@ -1087,7 +1087,7 @@ function LinesTable({
 
   return (
     <>
-    <div className="bud-fold">
+    <div className="bud-fold seg">
       <button className="seg-btn" onClick={() => setCollapsed(new Set())} disabled={shut.size === 0}>
         Развернуть все
       </button>
