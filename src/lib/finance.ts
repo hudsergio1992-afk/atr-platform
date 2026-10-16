@@ -67,6 +67,8 @@ export interface LineRules {
   dev: (l: BudgetLine) => number | null;
   /** Прогноз затрат по статье: по закрытой работе — её факт, по остальным — не меньше сметы. */
   forecast: (l: BudgetLine) => number;
+  /** % готовности работы статьи по графику; null — шифра нет или работы нет в графике. */
+  progress: (l: BudgetLine) => number | null;
 }
 
 /**
@@ -106,7 +108,11 @@ export function makeLineRules(progress: Map<string, number>, names: Map<string, 
     if (kind(l) === "counted" && (objectDone || isClosed(l))) return f;
     return l.forecast_amount !== null && l.forecast_amount !== undefined ? Number(l.forecast_amount) : Math.max(p, f);
   };
-  return { isOverhead, isClosed, kind, dev, forecast };
+  const progressOf = (l: BudgetLine): number | null => {
+    const code = workCodeOf(l.name);
+    return code !== null && progress.has(code) ? progress.get(code) ?? null : null;
+  };
+  return { isOverhead, isClosed, kind, dev, forecast, progress: progressOf };
 }
 
 /**
