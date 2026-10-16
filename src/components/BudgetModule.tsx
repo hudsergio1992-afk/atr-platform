@@ -13,7 +13,7 @@ import {
   HistoryEntry,
   ScheduleTask,
 } from "@/lib/types";
-import { fmtDate, fmtDateTime, fmtMoney, plural } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtMoney, fmtPercent, plural } from "@/lib/format";
 import { OBJECT_KEY, readSetting, writeSetting } from "@/lib/useClient";
 
 /** Порядок статей: по разделам затрат или как в «Графике работ» (по шифру работы). */
@@ -960,6 +960,13 @@ function LinesTable({
             >
               {fmtDev(dev)}
               <span className="bud-auto">после сдачи объекта</span>
+            </td>
+          ) : rules.kind(l) === "notStarted" && (rules.progress(l) ?? 0) > 0 ? (
+            <td
+              className="mono is-deferred"
+              title="Работа по графику идёт, а факт по статье ещё 0 ₽ — внесите потраченное. Если затрат по статье не будет, при закрытии работы подтвердите 0 ₽."
+            >
+              —<span className="bud-auto">факт не внесён, работа {fmtPercent(rules.progress(l))}</span>
             </td>
           ) : (
             <td className={`mono${devClass(dev)}`}>
