@@ -15,6 +15,7 @@ import { exportAllToExcel } from "@/lib/exportAll";
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -48,6 +49,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             {session.user.email}
           </span>
           <ExportButton />
+          <button className="btn btn-ghost btn-sm" onClick={() => setPwOpen(!pwOpen)}>
+            Сменить пароль
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={() => supabase.auth.signOut()}>
             Выйти
           </button>
@@ -77,8 +81,65 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <>
       {topbar}
+      {pwOpen && <PasswordForm onClose={() => setPwOpen(false)} />}
       {children}
     </>
+  );
+}
+
+/** Новый пароль для своей учётки — пока вы на сайте, старый вводить не нужно. */
+function PasswordForm({ onClose }: { onClose: () => void }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (pw.length < 8) return setMsg({ ok: false, text: "Пароль — не короче 8 символов." });
+    if (pw !== pw2) return setMsg({ ok: false, text: "Пароли не совпадают." });
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    setBusy(false);
+    if (error) {
+      const m = error.message.toLowerCase();
+      setMsg({
+        ok: false,
+        text: m.includes("different from the old")
+          ? "Новый пароль совпадает со старым — придумайте другой."
+          : m.includes("weak") || m.includes("characters")
+          ? "Слишком простой пароль — добавьте буквы и цифры."
+          : `Не удалось сменить пароль: ${error.message}`,
+      });
+      return;
+    }
+    setPw("");
+    setPw2("");
+    setMsg({ ok: true, text: "Пароль изменён. Входите с ним на любом устройстве." });
+  }
+
+  return (
+    <form className="auth-card auth-pw" onSubmit={submit}>
+      <h2>Новый пароль</h2>
+      <p className="hint">Старый пароль вводить не нужно — вы уже на сайте. Запишите новый в надёжное место.</p>
+      <div className="field">
+        <label htmlFor="pw-new">Новый пароль</label>
+        <input id="pw-new" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="pw-new2">Повторите пароль</label>
+        <input id="pw-new2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+      </div>
+      {msg && <div className={`banner show${msg.ok ? " is-ok" : ""}`}>{msg.text}</div>}
+      <div className="auth-pw-actions">
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Закрыть
+        </button>
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? "Сохраняю…" : "Сохранить пароль"}
+        </button>
+      </div>
+    </form>
   );
 }
 
