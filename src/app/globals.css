@@ -949,3 +949,8 @@ body:has(.panel.show) .banner.show {
 .bud-group-head.is-sub td { background: var(--surface); text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13px; padding-top: 4px; padding-bottom: 4px; }
 .bud-group-foot.is-sub td { background: var(--surface); font-weight: 500; font-size: 12.5px; }
 .bud-count { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: none; }
+
+/* Смена пароля */
+.auth-pw { margin: 0 auto 16px; }
+.auth-pw-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.banner.is-ok { background: var(--st-good-bg); color: var(--st-good-ink); }
