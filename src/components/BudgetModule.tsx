@@ -1115,11 +1115,12 @@ function LinesTable({
     }
 
     const isShut = shut.has(key);
+    const showSummary = isShut && lines.length > 0;
     const subtotal = task && !children.length ? "Итого по работе" : "Итого по разделу";
     return (
       <Fragment key={key}>
         <tr className={`bud-group-head${level ? " is-sub" : ""}`} onClick={() => toggle(key)}>
-          <td colSpan={5} style={{ paddingLeft: inset }}>
+          <td colSpan={showSummary ? 1 : 5} style={{ paddingLeft: inset }}>
             <span className="bud-head-in">
               <button
                 className="sch-caret"
@@ -1136,17 +1137,18 @@ function LinesTable({
               {lines.length > 0 && <span className="bud-count" title="Статей бюджета">{lines.length}</span>}
             </span>
           </td>
+          {showSummary && sumCells(lines)}
         </tr>
         {!isShut && (
           <>
             {direct.map((line) => renderRow(line, linesOrder === "schedule"))}
             {children.map((child) => renderGroup(child, level + 1))}
+            <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
+              <td style={{ paddingLeft: inset + 8 }}>{subtotal}</td>
+              {lines.length ? sumCells(lines) : <td colSpan={4}>—</td>}
+            </tr>
           </>
         )}
-        <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
-          <td style={{ paddingLeft: inset + 8 }}>{subtotal}</td>
-          {lines.length ? sumCells(lines) : <td colSpan={4}>—</td>}
-        </tr>
       </Fragment>
     );
   };
