@@ -1141,12 +1141,12 @@ function LinesTable({
           <>
             {direct.map((line) => renderRow(line, linesOrder === "schedule"))}
             {children.map((child) => renderGroup(child, level + 1))}
-            <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
-              <td style={{ paddingLeft: inset + 8 }}>{subtotal}</td>
-              {lines.length ? sumCells(lines) : <td colSpan={4}>—</td>}
-            </tr>
           </>
         )}
+        <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
+          <td style={{ paddingLeft: inset + 8 }}>{subtotal}</td>
+          {lines.length ? sumCells(lines) : <td colSpan={4}>—</td>}
+        </tr>
       </Fragment>
     );
   };
