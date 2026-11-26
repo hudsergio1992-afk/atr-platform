@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
 import {
@@ -16,13 +16,14 @@ import {
 import { fmtDate, fmtDateTime, fmtMoney, fmtPercent, plural } from "@/lib/format";
 import { OBJECT_KEY, readSetting, writeSetting } from "@/lib/useClient";
 
-/** Порядок статей: по разделам затрат или как в «Графике работ» (по шифру работы). */
+/** Статьи по разделам затрат или работы из графика с привязанными статьями. */
 type LinesOrder = "sections" | "schedule";
 const LS_ORDER_KEY = "atr.budget.order";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
 import { workCodeOf } from "@/lib/zeroCost";
 import { LineRules, makeLineRules, scheduleMaps } from "@/lib/finance";
+import { buildTree, flattenTree, TaskNode } from "@/lib/schedule";
 import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
@@ -102,21 +103,18 @@ export default function BudgetModule() {
   const [schemaMissing, setSchemaMissing] = useState(false);
 
   const [lines, setLines] = useState<BudgetLine[]>([]);
-  /** % факт работ графика по шифру («5.13») — чтобы видеть закрытые работы с нулевым фактом. */
-  const [progressByCode, setProgressByCode] = useState<Map<string, number>>(new Map());
+  const [tasks, setTasks] = useState<ScheduleTask[]>([]);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [signedActsSum, setSignedActsSum] = useState(0);
   const [orderedSupplySum, setOrderedSupplySum] = useState(0);
 
   const [basis, setBasis] = useState<Basis>("plan");
   const [sectionFilter, setSectionFilter] = useState<SectionFilter>("all");
-  const [linesOrder, setLinesOrder] = useState<LinesOrder>("sections");
+  const [linesOrder, setLinesOrder] = useState<LinesOrder>("schedule");
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- настройка читается из localStorage только в браузере
-    if (readSetting(LS_ORDER_KEY) === "schedule") setLinesOrder("schedule");
+    if (readSetting(LS_ORDER_KEY) === "sections") setLinesOrder("sections");
   }, []);
-  /** Названия работ и этапов графика по шифру — для заголовков в порядке «как в графике». */
-  const [workNames, setWorkNames] = useState<Map<string, string>>(new Map());
 
   const [linePanelOpen, setLinePanelOpen] = useState(false);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -159,7 +157,7 @@ export default function BudgetModule() {
   const loadObjectData = useCallback(async (id: string) => {
     if (!id) {
       setLines([]);
-      setProgressByCode(new Map());
+      setTasks([]);
       setPayments([]);
       setSignedActsSum(0);
       setOrderedSupplySum(0);
@@ -178,12 +176,10 @@ export default function BudgetModule() {
     setSchemaMissing(missing);
     if (lineRes.error) setBanner(dbErrorText(lineRes.error, "Не удалось загрузить статьи бюджета"));
     else if (payRes.error && !needsSchemaSetup(payRes.error)) setBanner(dbErrorText(payRes.error, "Не удалось загрузить платежи"));
+    else if (taskRes.error && !needsSchemaSetup(taskRes.error)) setBanner(dbErrorText(taskRes.error, "Не удалось загрузить график работ"));
 
     setLines((lineRes.data as BudgetLine[]) || []);
-    // % по шифру — со свёрткой подработ, как в графике (общее правило с дашбордом).
-    const maps = scheduleMaps((taskRes.data as ScheduleTask[]) || []);
-    setWorkNames(maps.names);
-    setProgressByCode(maps.progress);
+    setTasks((taskRes.data as ScheduleTask[]) || []);
     setPayments((payRes.data as CustomerPayment[]) || []);
     setSignedActsSum(
       needsSchemaSetup(actRes.error)
@@ -212,7 +208,8 @@ export default function BudgetModule() {
 
   // Одно правило с дашбордом: экономия — по закрытым работам, перерасход — сразу, накладные — после сдачи объекта.
   const objectDone = objects.find((o) => o.id === objectId)?.status === "done";
-  const rules = useMemo(() => makeLineRules(progressByCode, workNames, objectDone), [progressByCode, workNames, objectDone]);
+  const { progress, names } = useMemo(() => scheduleMaps(tasks), [tasks]);
+  const rules = useMemo(() => makeLineRules(progress, names, objectDone), [progress, names, objectDone]);
 
   const bySection = useMemo(() => {
     const m = new Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>();
@@ -252,10 +249,18 @@ export default function BudgetModule() {
 
   /* ------------------------------ Статьи: панель ------------------------------ */
 
-  function openLinePanel(id: string | null) {
+  function openLinePanel(id: string | null, task?: ScheduleTask) {
     setEditingLineId(id);
-    const l = id ? lines.find((x) => x.id === id) || null : null;
-    setLineForm(lineToForm(l));
+    const line = id ? lines.find((item) => item.id === id) || null : null;
+    setLineForm(
+      task
+        ? {
+            ...EMPTY_LINE_FORM,
+            section: sectionFilter === "all" ? "works" : sectionFilter,
+            name: taskLabel(task),
+          }
+        : lineToForm(line)
+    );
     setLinePanelOpen(true);
   }
   function closeLinePanel() {
@@ -572,20 +577,22 @@ export default function BudgetModule() {
               </button>
             </div>
 
-            {lines.length === 0 ? (
+            {!lines.length && !(linesOrder === "schedule" && tasks.length) ? (
               <div className="empty-state">Статей бюджета пока нет — добавьте первую.</div>
             ) : (
               <LinesTable
+                key={`${objectId}/${linesOrder}`}
                 bySection={bySection}
                 visibleSections={visibleSections}
                 linesOrder={linesOrder}
-                workNames={workNames}
+                tasks={tasks}
                 rules={rules}
                 detailId={lineDetailId}
                 setDetailId={setLineDetailId}
                 pendingDeleteId={linePendingDeleteId}
                 setPendingDeleteId={setLinePendingDeleteId}
                 onEdit={openLinePanel}
+                onAddForTask={(task) => openLinePanel(null, task)}
                 onDelete={deleteLine}
               />
             )}
@@ -764,23 +771,89 @@ export default function BudgetModule() {
 
 /* ============================== Подвиды ============================== */
 
+interface BudgetGroup {
+  key: string;
+  label: string;
+  task?: ScheduleTask;
+  lines: BudgetLine[];
+  direct: BudgetLine[];
+  children: BudgetGroup[];
+}
+
+const byBudgetName = (a: BudgetLine, b: BudgetLine) => a.name.localeCompare(b.name, "ru", { numeric: true });
+
+function taskLabel(task: ScheduleTask): string {
+  return task.code && workCodeOf(task.name) !== task.code ? `${task.code} ${task.name}` : task.name;
+}
+
+function groupBudgetBySchedule(tasks: ScheduleTask[], lines: BudgetLine[]): BudgetGroup[] {
+  const tree = buildTree(tasks, new Date().toISOString().slice(0, 10));
+  const taskIdsByCode = new Map<string, string>();
+  for (const { task } of flattenTree(tree)) {
+    if (task.code) taskIdsByCode.set(task.code, task.id);
+  }
+
+  const linesByTask = new Map<string, BudgetLine[]>();
+  const unlinked: BudgetLine[] = [];
+  for (const line of lines.slice().sort(byBudgetName)) {
+    // У старых статей с шифром подработы может быть только родительская работа в ГПР.
+    let code = workCodeOf(line.name);
+    while (code && !taskIdsByCode.has(code)) {
+      const parentEnd = code.lastIndexOf(".");
+      code = parentEnd < 0 ? null : code.slice(0, parentEnd);
+    }
+    const taskId = code ? taskIdsByCode.get(code) : undefined;
+    if (!taskId) {
+      unlinked.push(line);
+      continue;
+    }
+    const direct = linesByTask.get(taskId) ?? [];
+    direct.push(line);
+    linesByTask.set(taskId, direct);
+  }
+
+  const toGroup = (node: TaskNode): BudgetGroup => {
+    const children = node.children.map(toGroup);
+    const direct = linesByTask.get(node.task.id) ?? [];
+    return {
+      key: node.task.id,
+      label: taskLabel(node.task),
+      task: node.task,
+      lines: [...direct, ...children.flatMap((child) => child.lines)],
+      direct,
+      children,
+    };
+  };
+
+  const groups = tree.map(toGroup);
+  if (unlinked.length) {
+    groups.push({ key: "unlinked", label: "Без привязки к графику", lines: unlinked, direct: unlinked, children: [] });
+  }
+  return groups;
+}
+
+function groupCanCollapse(group: BudgetGroup): boolean {
+  return group.direct.length > 0 || group.children.length > 0;
+}
+
 function LinesTable({
   bySection,
   visibleSections,
   linesOrder,
-  workNames,
+  tasks,
   rules,
   detailId,
   setDetailId,
   pendingDeleteId,
   setPendingDeleteId,
   onEdit,
+  onAddForTask,
   onDelete,
 }: {
   bySection: Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>;
   visibleSections: BudgetSection[];
   linesOrder: LinesOrder;
-  workNames: Map<string, string>;
+  tasks: ScheduleTask[];
   /** Как статья входит в экономию/перерасход и прогноз — общее правило с дашбордом. */
   rules: LineRules;
   detailId: string | null;
@@ -788,6 +861,7 @@ function LinesTable({
   pendingDeleteId: string | null;
   setPendingDeleteId: (id: string | null) => void;
   onEdit: (id: string) => void;
+  onAddForTask: (task: ScheduleTask) => void;
   onDelete: (id: string) => void;
 }) {
   const dbl = useDoubleTap();
@@ -984,60 +1058,19 @@ function LinesTable({
     );
   };
 
-  /** Натуральный порядок шифров: 2.1 < 2.10 < 10.1. */
-  const byName = (a: BudgetLine, b: BudgetLine) => a.name.localeCompare(b.name, "ru", { numeric: true });
-  const stageOf = (l: BudgetLine): string => workCodeOf(l.name)?.split(".")[0] ?? "";
-  /** Работа второго уровня: «7.3» для «7.3 …» и «7.3.1 …»; у статей самого этапа («7 …») — "". */
-  const workOf = (l: BudgetLine): string => {
-    const parts = workCodeOf(l.name)?.split(".") ?? [];
-    return parts.length >= 2 ? parts.slice(0, 2).join(".") : "";
-  };
-  type Group = { key: string; label: string; lines: BudgetLine[]; works: { key: string; lines: BudgetLine[] }[]; direct: BudgetLine[] };
-  const scheduleGroups: Group[] = (() => {
-    const all = visibleSections.flatMap((s) => bySection.get(s)?.lines || []);
-    const m = new Map<string, BudgetLine[]>();
-    all.forEach((l) => {
-      const k = stageOf(l);
-      const arr = m.get(k);
-      if (arr) arr.push(l);
-      else m.set(k, [l]);
-    });
-    return [...m.entries()]
-      .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : Number(a) - Number(b)))
-      .map(([k, ls]) => {
-        const sorted = ls.sort(byName);
-        // Внутри этапа — работы (7.1, 7.3 …) своими сворачиваемыми группами, как подэтапы в графике.
-        const wm = new Map<string, BudgetLine[]>();
-        const direct: BudgetLine[] = [];
-        sorted.forEach((l) => {
-          const w = k ? workOf(l) : "";
-          if (!w) direct.push(l);
-          else {
-            const arr = wm.get(w);
-            if (arr) arr.push(l);
-            else wm.set(w, [l]);
-          }
+  const groups: BudgetGroup[] =
+    linesOrder === "schedule"
+      ? groupBudgetBySchedule(tasks, visibleSections.flatMap((section) => bySection.get(section)?.lines ?? []))
+      : visibleSections.flatMap((section) => {
+          const sectionLines = bySection.get(section)?.lines;
+          if (!sectionLines?.length) return [];
+          const direct = sectionLines.slice().sort(byBudgetName);
+          return [{ key: section, label: BUDGET_SECTION_LABEL[section], lines: direct, direct, children: [] }];
         });
-        const works = [...wm.entries()]
-          .sort(([a], [b]) => a.localeCompare(b, "ru", { numeric: true }))
-          .map(([wk, wl]) => ({ key: wk, lines: wl }));
-        return {
-          key: `st-${k}`,
-          label: k ? `${k} ${workNames.get(k) || ""}`.trim() : "Без шифра работы",
-          lines: sorted,
-          works,
-          direct,
-        };
-      });
-  })();
-  const sectionGroups: Group[] = visibleSections
-    .map((sec) => ({ sec, v: bySection.get(sec)! }))
-    .filter(({ v }) => v && v.lines.length > 0)
-    .map(({ sec, v }) => ({ key: `sec-${sec}`, label: BUDGET_SECTION_LABEL[sec], lines: v.lines.slice().sort(byName), works: [], direct: v.lines.slice().sort(byName) }));
-  const groups = linesOrder === "schedule" ? scheduleGroups : sectionGroups;
 
-  // Свёрнутые группы: по умолчанию свёрнуто всё, как в графике (видны разделы с суммами).
-  const allKeys = groups.flatMap((g) => [g.key, ...g.works.filter((w) => w.lines.length > 1).map((w) => `${g.key}/${w.key}`)]);
+  const collapsibleKeys = (group: BudgetGroup): string[] =>
+    groupCanCollapse(group) ? [group.key, ...group.children.flatMap(collapsibleKeys)] : [];
+  const allKeys = groups.flatMap(collapsibleKeys);
   const shut = collapsed ?? new Set(allKeys);
   const toggle = (k: string) => {
     const next = new Set(shut);
@@ -1060,37 +1093,63 @@ function LinesTable({
       </>
     );
   };
-  /** Заголовок группы: стрелка и название; свёрнутая группа показывает суммы прямо в заголовке. */
-  const groupHead = (k: string, label: string, ls: BudgetLine[], level: number) => {
-    const isShut = shut.has(k);
+  const renderGroup = (group: BudgetGroup, level: number): ReactElement => {
+    const { key, label, lines, direct, children, task } = group;
+    const inset = 6 + level * 22;
+    if (!groupCanCollapse(group)) {
+      return (
+        <tr key={key}>
+          <td className="name-cell" style={{ paddingLeft: inset }}>{label}</td>
+          <td colSpan={4}>
+            <span className="is-deferred">
+              {visibleSections.length < BUDGET_SECTIONS.length ? "Нет статей в выбранном разделе" : "Статей бюджета нет"}
+            </span>
+            {task?.code && (
+              <button className="btn" style={{ marginLeft: 8 }} onClick={() => onAddForTask(task)}>
+                + Статья
+              </button>
+            )}
+          </td>
+        </tr>
+      );
+    }
+
+    const isShut = shut.has(key);
+    const subtotal = task && !children.length ? "Итого по работе" : "Итого по разделу";
     return (
-      <tr className={`bud-group-head${level ? " is-sub" : ""}`} onClick={() => toggle(k)}>
-        <td colSpan={isShut ? 1 : 5} style={{ paddingLeft: 6 + level * 22 }}>
-          <span className="bud-head-in">
-            <button
-              className="sch-caret"
-              aria-label={isShut ? "Развернуть" : "Свернуть"}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggle(k);
-              }}
-            >
-              {isShut ? "▸" : "▾"}
-            </button>
-            <span>{label}</span>
-            <span className="bud-count">{ls.length}</span>
-          </span>
-        </td>
-        {isShut && sumCells(ls)}
-      </tr>
+      <Fragment key={key}>
+        <tr className={`bud-group-head${level ? " is-sub" : ""}`} onClick={() => toggle(key)}>
+          <td colSpan={5} style={{ paddingLeft: inset }}>
+            <span className="bud-head-in">
+              <button
+                className="sch-caret"
+                aria-label={isShut ? "Развернуть" : "Свернуть"}
+                aria-expanded={!isShut}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggle(key);
+                }}
+              >
+                {isShut ? "▸" : "▾"}
+              </button>
+              <span>{label}</span>
+              {lines.length > 0 && <span className="bud-count" title="Статей бюджета">{lines.length}</span>}
+            </span>
+          </td>
+        </tr>
+        {!isShut && (
+          <>
+            {direct.map((line) => renderRow(line, linesOrder === "schedule"))}
+            {children.map((child) => renderGroup(child, level + 1))}
+            <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
+              <td style={{ paddingLeft: inset + 8 }}>{subtotal}</td>
+              {lines.length ? sumCells(lines) : <td colSpan={4}>—</td>}
+            </tr>
+          </>
+        )}
+      </Fragment>
     );
   };
-  const groupFoot = (label: string, ls: BudgetLine[], level: number) => (
-    <tr className={`bud-group-foot${level ? " is-sub" : ""}`}>
-      <td style={{ paddingLeft: 14 + level * 22 }}>{label}</td>
-      {sumCells(ls)}
-    </tr>
-  );
 
   return (
     <>
@@ -1114,33 +1173,7 @@ function LinesTable({
           </tr>
         </thead>
         <tbody>
-          {groups.map((g) => (
-            <Fragment key={g.key}>
-              {groupHead(g.key, g.label, g.lines, 0)}
-              {!shut.has(g.key) && (
-                <>
-                  {g.direct.map((l) => renderRow(l, linesOrder === "schedule"))}
-                  {g.works.map((w) => {
-                    if (w.lines.length === 1) return renderRow(w.lines[0], true);
-                    const wk = `${g.key}/${w.key}`;
-                    const label = `${w.key} ${workNames.get(w.key) || ""}`.trim();
-                    return (
-                      <Fragment key={wk}>
-                        {groupHead(wk, label, w.lines, 1)}
-                        {!shut.has(wk) && (
-                          <>
-                            {w.lines.map((l) => renderRow(l, true))}
-                            {groupFoot(`Итого по работе ${w.key}`, w.lines, 1)}
-                          </>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                  {groupFoot("Подытог", g.lines, 0)}
-                </>
-              )}
-            </Fragment>
-          ))}
+          {groups.map((group) => renderGroup(group, 0))}
         </tbody>
         <tfoot>
           <tr className="bud-total-row">
