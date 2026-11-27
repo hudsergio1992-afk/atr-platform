@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthGate>
             <ModuleNav />
 
-            {children}
+            <div className="module-content">{children}</div>
           </AuthGate>
         </div>
       </body>

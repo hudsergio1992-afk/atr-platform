@@ -1,132 +1,4 @@
-/* Палитра и шапка действуют только на странице дашборда. */
-body:has(.portfolio-dashboard) {
-  --bg: #edf3fa;
-  --surface: #f7fafd;
-  --surface-2: #e7eff8;
-  --surface-3: #d9e5f3;
-  --border: #c3d2e2;
-  --ink: #102033;
-  --muted: #40566d;
-  --accent: #1675c5;
-  --accent-hover: #105c9e;
-  --accent-ink: #fff;
-  --st-good-bg: #d7efdf;
-  --st-good-ink: #11683c;
-  --st-warn-bg: #fdf0d9;
-  --st-warn-ink: #845000;
-  --st-bad-bg: #ffe6e7;
-  --st-bad-ink: #a51620;
-  --st-neutral-bg: #e2ebf8;
-  --st-neutral-ink: #254c72;
-  --dash-header: #253748;
-  --dash-section: #2e4b66;
-  --dash-gutter: clamp(12px, 1vw, 22px);
-  color-scheme: light;
-  padding: 0 0 32px;
-}
-
-.shell:has(> .portfolio-dashboard) { max-width: none; }
-
-.shell:has(> .portfolio-dashboard) > :is(.topbar, .modnav) {
-  color: #f5f8fd;
-  background: var(--dash-header);
-  padding-inline: max(var(--dash-gutter), 1.7vw);
-}
-
-.shell:has(> .portfolio-dashboard) > .topbar {
-  min-height: 48px;
-  align-items: center;
-  padding-block: 5px;
-  border: 0;
-}
-
-.shell:has(> .portfolio-dashboard) .brand {
-  align-items: center;
-  gap: 14px;
-}
-
-.shell:has(> .portfolio-dashboard) .brand .name {
-  font-size: clamp(20px, 1.9vw, 30px);
-  line-height: 1.15;
-}
-
-.shell:has(> .portfolio-dashboard) .brand .sub {
-  padding-inline-start: 14px;
-  border-inline-start: 1px solid #acc0d1;
-  color: #e8f0fa;
-  font-size: clamp(13px, 1.36vw, 21px);
-  font-weight: 600;
-}
-
-.shell:has(> .portfolio-dashboard) > .modnav {
-  gap: clamp(5px, 1vw, 20px);
-  padding-block: 4px 7px;
-}
-
-.shell:has(> .portfolio-dashboard) .modtab {
-  color: #edf4fd;
-  font-size: clamp(13px, 1.06vw, 17px);
-  padding: 8px clamp(9px, 1.35vw, 24px);
-  border-radius: 7px;
-}
-
-.shell:has(> .portfolio-dashboard) .modtab.link:hover { background: #344d65; color: #fff; }
-.shell:has(> .portfolio-dashboard) .modtab.link.active { background: var(--accent); color: #fff; }
-.shell:has(> .portfolio-dashboard) .modtab.link.active:hover { background: var(--accent-hover); }
-.shell:has(> .portfolio-dashboard) .modtab .soon { background: #42576c; color: #eff5fb; }
-
-.shell:has(> .portfolio-dashboard) .topbar .auth-user { gap: 7px; }
-.shell:has(> .portfolio-dashboard) .auth-export,
-.dash-account > summary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 34px;
-  border: 1px solid #bac9d7;
-  border-radius: 6px;
-  color: #f5f8fd;
-  background: transparent;
-  font-weight: 600;
-  margin: 0;
-}
-
-.shell:has(> .portfolio-dashboard) .auth-export::before {
-  content: "↓";
-  font-size: 17px;
-  line-height: 1;
-}
-
-.shell:has(> .portfolio-dashboard) .auth-export:hover,
-.dash-account > summary:hover { color: #fff; background: #344d65; }
-
-.dash-account { position: relative; }
-.dash-account > summary { width: 34px; cursor: pointer; list-style: none; }
-.dash-account > summary::-webkit-details-marker { display: none; }
-
-.dash-account-menu {
-  position: absolute;
-  z-index: 20;
-  inset: calc(100% + 6px) 0 auto auto;
-  width: min(340px, calc(100vw - 24px));
-  display: grid;
-  gap: 7px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--surface);
-  box-shadow: 0 10px 30px #182d4540;
-}
-
-.dash-account-menu .role-chip { white-space: normal; border-radius: 6px; }
-.dash-account-menu .auth-email { overflow-wrap: anywhere; }
-.dash-account-menu .btn { justify-self: start; margin: 0; }
-.shell:has(> .portfolio-dashboard) > .auth-pw { margin-top: 12px; }
-
 .portfolio-dashboard {
-  margin: 0 var(--dash-gutter);
-  padding-top: 12px;
   font-size: clamp(14px, 1.14vw, 18px);
   line-height: 1.3;
 }
@@ -215,7 +87,7 @@ body:has(.portfolio-dashboard) {
 .portfolio-dashboard .fin-head,
 .portfolio-dashboard .section-title {
   color: #f6f9fd;
-  background: linear-gradient(105deg, #34536e, #29445e);
+  background: var(--section-bar);
   padding: 7px clamp(12px, 1.55vw, 26px);
   margin: 0;
   min-height: 39px;
@@ -430,9 +302,6 @@ body:has(.portfolio-dashboard) {
 }
 
 @media (max-width: 490px) {
-  .shell:has(> .portfolio-dashboard) > .topbar { gap: 6px; padding-block: 8px; }
-  .shell:has(> .portfolio-dashboard) .brand { flex-direction: column; align-items: flex-start; gap: 3px; }
-  .shell:has(> .portfolio-dashboard) .brand .sub { padding: 0; border: 0; }
   .portfolio-dashboard .fin-groups { grid-template-columns: 1fr; }
   .dash-fin-title { flex-direction: column; align-items: flex-start; }
 }
