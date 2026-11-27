@@ -784,33 +784,6 @@ td.risk-reasons { color: var(--muted); font-size: 12.5px; max-width: 260px; }
 .photo-add-btn:hover { background: var(--surface-3); }
 
 @media (max-width: 860px) {
-    .sch-head, .sch-row, .sch-detail-row { min-width: 0; }
-    .sch-head {
-        grid-template-columns: 1fr auto;
-        grid-template-areas: "name status";
-    }
-    .sch-row {
-        grid-template-columns: 1fr auto;
-        grid-template-areas: "name status" "meta meta";
-        padding: 4px 0 8px;
-    }
-    .sch-c-name { grid-area: name; }
-    .sch-c-status { grid-area: status; }
-    .sch-head .sch-c-plan, .sch-head .sch-c-dur, .sch-head .sch-c-days,
-    .sch-head .sch-c-fact, .sch-head .sch-c-pp, .sch-head .sch-c-pf, .sch-head .sch-c-dev,
-    .sch-row .sch-c-plan, .sch-row .sch-c-dur, .sch-row .sch-c-days,
-    .sch-row .sch-c-fact, .sch-row .sch-c-pp, .sch-row .sch-c-pf, .sch-row .sch-c-dev {
-        display: none;
-    }
-    .sch-name-text { white-space: normal; overflow: visible; }
-    .sch-c-name { align-items: flex-start; }
-    .sch-c-meta {
-        grid-area: meta; display: flex; flex-wrap: wrap; gap: 4px 12px;
-        font-size: 11.5px; color: var(--muted); padding: 0 10px;
-    }
-    .sch-c-meta .is-neg { color: var(--st-bad-ink); }
-    .gantt-names { flex: 0 0 132px; min-width: 0; }
-    .gantt-name { font-size: 11.5px; }
     .seg-btn { padding: 7px 10px; font-size: 12px; }
     .calc-box dd { text-align: left; }
 }
@@ -1010,37 +983,77 @@ body:has(.panel.show) .banner.show {
     .module-content .toolbar-actions { max-width: 100%; }
 }
 
-/* Мобильные график и ПТО */
-@media (max-width: 860px) {
-    .schedule-module :is(.sch-head, .sch-row) { grid-template-columns: minmax(0, 1fr) auto; }
-    .schedule-module .sch-c-cost { display: none; }
-    .schedule-module .sch-c-name { flex-wrap: wrap; }
-    .schedule-module .sch-parent {
-        flex-basis: 100%;
-        white-space: normal;
-        overflow-wrap: anywhere;
+/* Карточки графика для экранов, на которых полная таблица не помещается. */
+@media (max-width: 1180px) {
+    .schedule-module { min-width: 0; }
+    .schedule-module .obj-picker { padding-top: 0; gap: 5px 10px; }
+    .sch-summary-main { gap: 6px 8px; }
+    .sch-summary-details { width: 100%; min-width: 0; }
+    .sch-summary-details > summary {
+        padding: 6px 4px 2px;
+        color: var(--st-neutral-ink);
+        font-weight: 600;
+        cursor: pointer;
     }
-    .schedule-module .sch-c-meta { padding-inline: 10px; }
-    .schedule-module .sch-mobile-cost {
-        display: flex; flex-wrap: wrap; gap: 3px 12px;
-        flex-basis: 100%;
+    .sch-summary-extra {
+        display: grid; gap: 8px;
+        padding: 8px 0 0;
+        border-top: 1px solid var(--border);
     }
+    .sch-summary-main .chip { max-width: 100%; flex-wrap: wrap; }
+    .sch-summary-main .late-item { white-space: normal; overflow-wrap: anywhere; }
 
-    .schedule-module .gantt-names { flex-basis: clamp(132px, 40%, 250px); }
+    .sch-task-list { display: grid; gap: 8px; min-width: 0; }
+    .sch-task-card {
+        min-width: 0; padding: 9px 11px 10px;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+    .sch-task-card.is-group { background: var(--surface-2); }
+    .sch-task-card-head { display: flex; align-items: flex-start; gap: 5px; }
+    .sch-task-name, .sch-task-toggle {
+        min-height: 40px; border: 0; border-radius: 6px;
+        color: var(--ink); background: transparent; cursor: pointer;
+    }
+    .sch-task-name {
+        display: flex; flex: 1; min-width: 0; gap: 9px;
+        justify-content: space-between; align-items: center;
+        padding: 3px 4px; text-align: left; font-size: 14px;
+        font-weight: 700; line-height: 1.35; overflow-wrap: anywhere;
+    }
+    .sch-task-name > span:last-child { flex: none; color: var(--accent); font-size: 20px; }
+    .sch-task-toggle { flex: 0 0 34px; background: var(--surface-3); color: var(--st-neutral-ink); }
+    .sch-task-toggle:disabled { opacity: .65; cursor: default; }
+    .sch-task-parent { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .sch-task-status { display: flex; flex-wrap: wrap; gap: 6px; margin: 3px 0 7px; }
+    .sch-task-values {
+        display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px 10px; margin: 0; font-size: 13px; overflow-wrap: anywhere;
+    }
+    .sch-task-values dt { color: var(--muted); font-size: 11.5px; }
+    .sch-task-values dd { margin: 0; font-weight: 550; font-variant-numeric: tabular-nums; }
+    .sch-task-card .detail { margin-top: 10px; padding: 10px; border-radius: 5px; }
+    .schedule-module .detail-block dl { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+    .schedule-module .detail-block dd { overflow-wrap: anywhere; }
+    .schedule-module .detail-actions { flex-wrap: wrap; }
+    .schedule-module .detail-actions .btn { white-space: normal; }
+    .sch-compact-sort { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+    .sch-compact-sort .filter { flex: 1; min-width: 0; }
+
+    .schedule-module .gantt-names { flex-basis: clamp(122px, 40%, 250px); }
     .schedule-module .gantt-scroll { min-width: 0; }
     .schedule-module :is(.gantt-name, .gantt-row) { height: 42px; }
     .schedule-module .gantt-name { display: flex; align-items: center; }
     .schedule-module .gantt-name-label {
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        overflow: hidden;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        line-height: 1.25;
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+        overflow: hidden; white-space: normal; overflow-wrap: anywhere;
+        font-size: 12px; line-height: 1.25;
     }
     .schedule-module .gantt-bar { margin-top: 6px; }
+}
 
+/* Мобильный реестр ПТО */
+@media (max-width: 860px) {
     .pto-module :is(.accept-name, .accept-sub, .cname, .caddr, .cmeta, .detail-block dd) {
         overflow-wrap: anywhere;
     }
@@ -1063,12 +1076,14 @@ body:has(.panel.show) .banner.show {
     }
     .pto-module .toolbar > .seg .seg-btn { white-space: normal; padding: 7px 5px; min-height: 44px; }
     .pto-module .toolbar > .btn-primary { margin-inline-start: 0; }
-    .schedule-module .toolbar > .search { flex-basis: 100%; }
-    .schedule-module .toolbar > .filter { flex: 1 1 0; min-width: 0; }
-    .schedule-module .toolbar > .seg { max-width: 100%; }
-    .schedule-module .toolbar .seg-btn { min-height: 38px; white-space: normal; }
+    .schedule-module .toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+    .schedule-module .toolbar > :is(.search, .seg, .toolbar-actions) { grid-column: 1 / -1; min-width: 0; }
+    .schedule-module .toolbar > .filter { width: 100%; min-width: 0; }
+    .schedule-module .toolbar > .seg { display: flex; }
+    .schedule-module .toolbar .seg-btn { flex: 1; min-width: 0; min-height: 40px; white-space: normal; }
     .schedule-module .toolbar-actions { width: 100%; margin-inline-start: 0; gap: 6px; }
-    .schedule-module .toolbar-actions .btn { margin-inline-start: 0; white-space: normal; padding-inline: 10px; }
+    .schedule-module .toolbar-actions .btn { flex: 1 1 85px; margin-inline-start: 0; white-space: normal; padding-inline: 7px; }
+    .schedule-module :is(.search, .filter) { font-size: 16px; }
     .schedule-module .close-line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .schedule-module .close-line-name {
         grid-column: 1 / -1;
