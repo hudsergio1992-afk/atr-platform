@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { exportAllToExcel } from "@/lib/exportAll";
@@ -16,6 +17,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const isDashboard = usePathname() === "/dashboard";
 
   useEffect(() => {
     let alive = true;
@@ -34,6 +36,27 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const account = session && (
+    <>
+      <span className="role-chip">
+        Роль: все роли (Руководство / РП / Прораб / Снабженец / Инженер ПТО)
+      </span>
+      <span className="auth-email" title="Вы вошли как">{session.user.email}</span>
+      {!isDashboard && <ExportButton />}
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          setPwOpen(!pwOpen);
+        }}
+      >
+        Сменить пароль
+      </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => supabase.auth.signOut()}>
+        Выйти
+      </button>
+    </>
+  );
   const topbar = (
     <div className="topbar">
       <div className="brand">
@@ -42,19 +65,20 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       </div>
       {session && (
         <div className="auth-user">
-          <span className="role-chip">
-            Роль: все роли (Руководство / РП / Прораб / Снабженец / Инженер ПТО)
-          </span>
-          <span className="auth-email" title="Вы вошли как">
-            {session.user.email}
-          </span>
-          <ExportButton />
-          <button className="btn btn-ghost btn-sm" onClick={() => setPwOpen(!pwOpen)}>
-            Сменить пароль
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => supabase.auth.signOut()}>
-            Выйти
-          </button>
+          {isDashboard ? (
+            <>
+              <ExportButton />
+              <details className="dash-account">
+                <summary aria-label="Учётная запись" title="Учётная запись">
+                  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <circle cx="12" cy="8" r="3.5" />
+                    <path d="M5 20v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1" />
+                  </svg>
+                </summary>
+                <div className="dash-account-menu">{account}</div>
+              </details>
+            </>
+          ) : account}
         </div>
       )}
     </div>
@@ -161,7 +185,7 @@ function ExportButton() {
   }
   return (
     <button
-      className="btn btn-ghost btn-sm"
+      className="btn btn-ghost btn-sm auth-export"
       onClick={run}
       disabled={state === "busy"}
       title={note || "Резервная копия: все таблицы и список фото в один Excel-файл"}
