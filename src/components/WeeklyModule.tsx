@@ -46,7 +46,7 @@ import {
 import { OBJECT_KEY, readSetting, useToday } from "@/lib/useClient";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
-import { CostByWork, loadCostByWork, workFactEntered } from "@/lib/zeroCost";
+import { CostByWork, groupWorkCosts, loadWorkBudgetLines, workFactEntered } from "@/lib/zeroCost";
 import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
@@ -178,18 +178,19 @@ export default function WeeklyModule() {
       return;
     }
     setLoadingWeek(true);
-    const [tasksRes, asgRes, costs] = await Promise.all([
+    const [tasksRes, asgRes, budget] = await Promise.all([
       supabase.from("schedule_tasks").select("*").eq("object_id", id).order("sort_order"),
       supabase.from("weekly_assignments").select("*").eq("object_id", id).order("week_start", { ascending: false }),
-      loadCostByWork(id),
+      loadWorkBudgetLines(id),
     ]);
-    setCostByWork(costs);
+    const scheduleTasks = (tasksRes.data as ScheduleTask[]) || [];
+    setCostByWork(groupWorkCosts(scheduleTasks, budget.data ?? []));
     if (tasksRes.error) setBanner(dbErrorText(tasksRes.error, "Не удалось загрузить график"));
     if (asgRes.error) setBanner(dbErrorText(asgRes.error, "Не удалось загрузить задания"));
     setSchemaMissing(needsSchemaSetup(tasksRes.error) || needsSchemaSetup(asgRes.error));
 
     const asg = (asgRes.data as WeeklyAssignment[]) || [];
-    setTasks((tasksRes.data as ScheduleTask[]) || []);
+    setTasks(scheduleTasks);
     setAssignments(asg);
 
     if (asg.length) {
@@ -419,7 +420,7 @@ export default function WeeklyModule() {
    */
   function zeroCloseBlock(node: TaskNode, progress: number): string | null {
     if (progress < 100 || node.progressFact >= 100) return null;
-    if (workFactEntered(node.task.code, costByWork)) return null;
+    if (workFactEntered(node.task.id, costByWork)) return null;
     return `«${node.task.name}» не закрыта: при закрытии нужно поставить фактическую стоимость — закройте её в «Графике работ»`;
   }
 

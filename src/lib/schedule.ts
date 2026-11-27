@@ -97,6 +97,7 @@ export interface TaskNode {
    * дорогой невыполненный этап прятался бы за дешёвым закрытым.
    */
   costDone: number | null;
+  costFact: number | null;
   /** Цена за единицу объёма, ₽ — стоимость, делённая на объём. */
   costPerUnit: number | null;
   progressPlan: number | null;
@@ -189,7 +190,11 @@ function computeStatus(
  * У этапа с подэтапами собственные даты/НЧ/проценты игнорируются — берётся свёртка детей.
  * Записи с недостижимым parent_id (или в цикле) поднимаются в корень, чтобы не пропасть из графика.
  */
-export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
+export function buildTree(
+  tasks: ScheduleTask[],
+  today: string,
+  budget?: ReadonlyMap<string, { plan: number; fact: number }>
+): TaskNode[] {
   const byId = new Map<string, ScheduleTask>();
   tasks.forEach((t) => byId.set(t.id, t));
 
@@ -229,9 +234,12 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
   const bySort = (a: ScheduleTask, b: ScheduleTask) =>
     a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
 
-  const build = (task: ScheduleTask, level: number): TaskNode => {
+  const build = (task: ScheduleTask, level: number, parentHasBudget: boolean): TaskNode => {
+    const taskBudget = budget?.get(task.id);
     const kids = (childrenOf.get(task.id) || []).slice().sort(bySort);
-    const children = kids.map((k) => build(k, level + 1));
+    // Старая стоимость подработы из ГПР может уже входить в бюджет раздела.
+    const covered = parentHasBudget || (taskBudget?.plan ?? 0) > 0;
+    const children = kids.map((child) => build(child, level + 1, covered));
 
     if (children.length === 0) {
       const startPlan = task.start_plan;
@@ -245,10 +253,10 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         task.volume_total === null || task.volume_total === undefined
           ? null
           : Number(task.volume_total);
-      const costTotal =
-        task.cost_total === null || task.cost_total === undefined || !Number.isFinite(Number(task.cost_total))
-          ? null
-          : Number(task.cost_total);
+      const legacyCost = task.cost_total == null ? null : Number(task.cost_total);
+      const costTotal = taskBudget
+        ? round2(taskBudget.plan)
+        : !parentHasBudget && legacyCost !== null && Number.isFinite(legacyCost) ? legacyCost : null;
       return {
         task,
         children,
@@ -265,6 +273,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
         unit: task.unit || null,
         costTotal,
         costDone: costTotal === null ? null : round2((costTotal * progressFact) / 100),
+        costFact: taskBudget ? round2(taskBudget.fact) : null,
         costPerUnit:
           costTotal === null || !volumeTotal || volumeTotal <= 0
             ? null
@@ -298,11 +307,12 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
 
     // Деньги складываются всегда: рубль везде рубль, единицы сходиться не обязаны.
     const withCost = children.filter((c) => c.costTotal !== null);
-    const costTotal = withCost.length
-      ? round2(withCost.reduce((sum, c) => sum + (c.costTotal || 0), 0))
+    const costTotal = withCost.length || taskBudget
+      ? round2(withCost.reduce((sum, child) => sum + (child.costTotal ?? 0), taskBudget?.plan ?? 0))
       : null;
-    const costDone = withCost.length
-      ? round2(withCost.reduce((sum, c) => sum + (c.costDone || 0), 0))
+    const withFact = children.filter((child) => child.costFact !== null);
+    const costFact = withFact.length || taskBudget
+      ? round2(withFact.reduce((sum, child) => sum + (child.costFact ?? 0), taskBudget?.fact ?? 0))
       : null;
 
     const totalWeight = children.reduce((s, c) => s + c.weight, 0) || children.length;
@@ -322,6 +332,9 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
 
     const progressPlan = wAvg((c) => c.progressPlan);
     const progressFact = wAvg((c) => c.progressFact) ?? 0;
+    const costDone = costTotal === null ? null : round2(
+      withCost.reduce((sum, child) => sum + (child.costDone ?? 0), (taskBudget?.plan ?? 0) * progressFact / 100)
+    );
     const deviation =
       progressPlan === null ? null : Math.round((progressFact - progressPlan) * 10) / 10;
 
@@ -350,6 +363,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
       unit,
       costTotal,
       costDone,
+      costFact,
       costPerUnit:
         costTotal === null || !volumeTotal || volumeTotal <= 0
           ? null
@@ -364,7 +378,7 @@ export function buildTree(tasks: ScheduleTask[], today: string): TaskNode[] {
     };
   };
 
-  return roots.sort(bySort).map((t) => build(t, 0));
+  return roots.sort(bySort).map((task) => build(task, 0, false));
 }
 
 /** Разворачивает дерево в плоский список в порядке обхода сверху вниз. */
@@ -430,8 +444,8 @@ export function summarize(nodes: TaskNode[]): ScheduleSummary {
     else if (n.daysGain < 0) daysLate += -n.daysGain;
   }
 
-  // Деньги — тоже по листьям: стоимость раздела это и есть сумма его работ.
-  const priced = base.filter((n) => n.costTotal !== null);
+  // Верхние этапы уже включают затраты своих работ и статьи самого раздела.
+  const priced = nodes.filter((n) => n.costTotal !== null);
   const costTotal = priced.length
     ? Math.round(priced.reduce((sum, n) => sum + (n.costTotal || 0), 0) * 100) / 100
     : null;

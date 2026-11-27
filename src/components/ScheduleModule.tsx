@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { OBJECT_KEY, readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
 import { supabase } from "@/lib/supabaseClient";
 import { dbErrorText, needsSchemaSetup } from "@/lib/dbError";
@@ -53,7 +54,7 @@ import {
 import { loadCatalogStages, saveCatalogStage } from "@/lib/stageCatalog";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
-import { closingLineName, CostByWork, loadCostByWork, spentByCode } from "@/lib/zeroCost";
+import { closingLineName, CostByWork, groupWorkCosts, loadWorkBudgetLines } from "@/lib/zeroCost";
 import ScheduleImport from "@/components/ScheduleImport";
 
 type ViewMode = "tree" | "table" | "gantt";
@@ -109,7 +110,6 @@ interface FormState {
   reason: string;
   volumeTotal: string;
   unit: string;
-  costTotal: string;
   /** Почему работа закрывается без затрат — обязателен, если на неё заложены деньги, а факт 0. */
   closeComment: string;
 }
@@ -128,7 +128,6 @@ const EMPTY_FORM: FormState = {
   reason: "",
   volumeTotal: "",
   unit: "",
-  costTotal: "",
   closeComment: "",
 };
 
@@ -146,7 +145,6 @@ const FIELD_LABEL: Record<keyof FormState, string> = {
   reason: "Основание",
   volumeTotal: "Объём",
   unit: "Ед. изм.",
-  costTotal: "Стоимость",
   closeComment: "Закрыта без затрат, причина",
 };
 
@@ -166,7 +164,6 @@ function toForm(t: ScheduleTask | null): FormState {
     reason: t.reason || "",
     volumeTotal: t.volume_total != null ? String(t.volume_total) : "",
     unit: t.unit || "",
-    costTotal: t.cost_total != null ? String(t.cost_total) : "",
     closeComment: "",
   };
 }
@@ -189,7 +186,6 @@ function diffText(
       if (k === "kind") return KIND_LABEL[v as TaskKind] || v;
       if (k.startsWith("start") || k.startsWith("end")) return fmtDate(v);
       if (k === "progressFact") return `${v}%`;
-      if (k === "costTotal") return fmtMoney(v);
       return v;
     };
     parts.push(`${FIELD_LABEL[k]}: ${disp(ov)} → ${disp(nv)}`);
@@ -201,7 +197,8 @@ function diffText(
  * Подсказка к столбцу стоимости. «Выполнено в ₽» = стоимость × % готовности — это объём
  * сделанной работы в деньгах, а не потраченные деньги; потрачено — факт из «Смет и бюджета».
  */
-function costWords(n: TaskNode, spent: number | null): string {
+function costWords(n: TaskNode): string {
+  const spent = n.costFact;
   if (n.costTotal === null) return "Стоимость не задана";
   const done = n.costDone ?? 0;
   const left = Math.round((n.costTotal - done) * 100) / 100;
@@ -323,23 +320,25 @@ export default function ScheduleModule() {
       return;
     }
     setLoadingTasks(true);
-    const [{ data, error }, costs] = await Promise.all([
+    const [{ data, error }, budget] = await Promise.all([
       supabase
         .from("schedule_tasks")
         .select("*")
         .eq("object_id", id)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
-      loadCostByWork(id),
+      loadWorkBudgetLines(id),
     ]);
-    setCostByWork(costs);
+    const scheduleTasks = (data as ScheduleTask[]) || [];
+    setCostByWork(groupWorkCosts(scheduleTasks, budget.data ?? []));
     if (error) {
       setBanner(dbErrorText(error, "Не удалось загрузить график"));
       setSchemaMissing(needsSchemaSetup(error));
       setTasks([]);
     } else {
-      setSchemaMissing(false);
-      setTasks((data as ScheduleTask[]) || []);
+      if (budget.error) setBanner(dbErrorText(budget.error, "Не удалось загрузить затраты из бюджета"));
+      setSchemaMissing(needsSchemaSetup(budget.error));
+      setTasks(scheduleTasks);
     }
     setLoadingTasks(false);
   }, []);
@@ -378,8 +377,8 @@ export default function ScheduleModule() {
   );
 
   const tree = useMemo(
-    () => (today ? buildTree(tasks, today) : []),
-    [tasks, today]
+    () => (today ? buildTree(tasks, today, costByWork) : []),
+    [tasks, today, costByWork]
   );
 
   const nameById = useMemo(() => {
@@ -416,7 +415,11 @@ export default function ScheduleModule() {
 
   const summary = useMemo(() => summarize(tree), [tree]);
   /** Фактически потрачено по «Сметам и бюджету» и насколько траты обгоняют выполненную работу. */
-  const spentTotal = useMemo(() => spentByCode(null, costByWork), [costByWork]);
+  const withFact = tree.filter((node) => node.costFact !== null);
+  const spentTotal = withFact.length
+    ? Math.round(withFact.reduce((sum, node) => sum + (node.costFact ?? 0), 0) * 100) / 100
+    : null;
+  const unlinkedCost = costByWork.get("");
   const spentGap =
     spentTotal === null || summary.costDone === null ? null : Math.round((spentTotal - summary.costDone) * 100) / 100;
   const timeline = useMemo(
@@ -556,36 +559,6 @@ export default function ScheduleModule() {
     return String(Math.round(((total * pf) / 100) * 1000) / 1000);
   }, [form.volumeTotal, form.progressFact]);
 
-  /** Цена за единицу, отвечающая текущей стоимости и объёму. Считается, не хранится. */
-  const unitPrice = useMemo(() => {
-    const total = Number(form.volumeTotal);
-    const cost = Number(form.costTotal);
-    if (!Number.isFinite(total) || total <= 0) return "";
-    if (form.costTotal === "" || !Number.isFinite(cost)) return "";
-    return String(Math.round((cost / total) * 100) / 100);
-  }, [form.volumeTotal, form.costTotal]);
-
-  /** Вписали цену за единицу — стоимость этапа пересчитывается сама. */
-  function setUnitPrice(value: string) {
-    const total = Number(form.volumeTotal);
-    const price = Number(value);
-    if (!Number.isFinite(total) || total <= 0) return;
-    if (value === "") {
-      setForm((f) => ({ ...f, costTotal: "" }));
-      return;
-    }
-    if (!Number.isFinite(price)) return;
-    setForm((f) => ({ ...f, costTotal: String(Math.round(price * total * 100) / 100) }));
-  }
-
-  /** Освоено, ₽ — стоимость, приходящаяся на введённый процент готовности. */
-  const doneCost = useMemo(() => {
-    const cost = Number(form.costTotal);
-    const pf = Number(form.progressFact);
-    if (form.costTotal === "" || !Number.isFinite(cost) || !Number.isFinite(pf)) return null;
-    return Math.round(((cost * pf) / 100) * 100) / 100;
-  }, [form.costTotal, form.progressFact]);
-
   /** Ввели выполненный объём — процент готовности пересчитывается сам. */
   function setDoneVolume(value: string) {
     const total = Number(form.volumeTotal);
@@ -680,6 +653,14 @@ export default function ScheduleModule() {
 
   const editingNode = editingId ? nodeById.get(editingId) || null : null;
   const editingIsGroup = !!editingNode?.isGroup;
+  const plannedCost = editingNode?.costTotal ?? null;
+  const formVolume = Number(form.volumeTotal);
+  const unitPrice = !editingIsGroup && plannedCost !== null && formVolume > 0
+    ? fmtMoney(plannedCost / formVolume)
+    : "—";
+  const doneCost = editingIsGroup
+    ? editingNode?.costDone ?? null
+    : plannedCost === null ? null : Math.round(plannedCost * clampPercent(Number(form.progressFact) || 0)) / 100;
 
   /**
    * Работу закрывают (было меньше 100%, стало 100%): при закрытии обязательно
@@ -691,7 +672,7 @@ export default function ScheduleModule() {
     const old = tasks.find((t) => t.id === editingId);
     if (!old || Number(old.progress_fact) >= 100) return null;
     if (Number(form.progressFact || 0) < 100) return null;
-    const budget = old.code ? costByWork.get(old.code) : undefined;
+    const budget = costByWork.get(old.id);
     return { task: old, lines: budget?.lines || [], plan: budget?.plan || 0 };
   }, [editingId, editingIsGroup, tasks, form.progressFact, costByWork]);
 
@@ -859,7 +840,7 @@ export default function ScheduleModule() {
   }
 
   /** Ближайший шифр выше по дереву: у подработ своего шифра нет, их статьи — у работы-родителя. */
-  function ancestorCodes(t: ScheduleTask): string[] {
+  function ancestorIds(t: ScheduleTask): string[] {
     const out: string[] = [];
     let p = t.parent_id;
     const seen = new Set<string>();
@@ -867,7 +848,7 @@ export default function ScheduleModule() {
       seen.add(p);
       const a = tasks.find((x) => x.id === p);
       if (!a) break;
-      if (a.code) out.push(a.code);
+      out.push(a.id);
       p = a.parent_id;
     }
     return out;
@@ -914,23 +895,21 @@ export default function ScheduleModule() {
     }
     const value = Number(closeNewFact || 0);
     if (!Number.isFinite(value) || value < 0) return null;
-    // Подработа без своего шифра: статья встаёт под шифр работы-родителя, а план
-    // в неё не пишется, если он уже есть в статьях родителя — иначе план задвоится.
-    const above = ancestorCodes(c.task);
-    const code = c.task.code || above[0] || null;
-    const planCovered = above.some((a) => (costByWork.get(a)?.plan || 0) > 0);
+    // Сохраняем прежний план старой работы, если он не учтён в бюджете раздела.
+    const planCovered = ancestorIds(c.task).some((id) => (costByWork.get(id)?.plan ?? 0) > 0);
     const plan = planCovered ? 0 : Number(c.task.cost_total) || 0;
     const { error } = await supabase.from("budget_lines").insert({
       object_id: objectId,
+      task_id: c.task.id,
       section: "works",
-      name: closingLineName(code, c.task.name),
+      name: closingLineName(c.task.code, c.task.name),
       plan_amount: plan,
       fact_amount: value,
       forecast_amount: null,
       zero_fact_confirmed: value === 0,
       note:
         "Заведена при закрытии работы в «Графике работ»" +
-        (planCovered ? "; план учтён в статьях работы " + above[0] : "") +
+        (planCovered ? "; план учтён в статьях вышестоящего этапа" : "") +
         why,
       created_at: now,
       updated_at: now,
@@ -964,11 +943,6 @@ export default function ScheduleModule() {
     const vol = form.volumeTotal === "" ? null : Number(form.volumeTotal);
     if (vol !== null && (!Number.isFinite(vol) || vol < 0)) {
       setBanner("Объём должен быть неотрицательным числом.");
-      return;
-    }
-    const cost = form.costTotal === "" ? null : Number(form.costTotal);
-    if (cost !== null && (!Number.isFinite(cost) || cost < 0)) {
-      setBanner("Стоимость должна быть неотрицательным числом.");
       return;
     }
     if (vol !== null && !form.unit.trim()) {
@@ -1032,7 +1006,6 @@ export default function ScheduleModule() {
       reason: form.kind === "extra" ? form.reason.trim() || null : null,
       volume_total: vol,
       unit: form.unit.trim() || null,
-      cost_total: cost,
       updated_at: now,
     };
 
@@ -1173,8 +1146,10 @@ export default function ScheduleModule() {
             <dd className="mono">
               {n.volumeTotal != null ? `${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim() : "—"}
             </dd>
-            <dt>Стоимость</dt>
-            <dd className="mono">{n.costTotal === null ? "—" : fmtMoney(n.costTotal)}</dd>
+            <dt>План затрат</dt>
+            <dd className="mono">{fmtMoney(n.costTotal)}</dd>
+            <dt>Факт затрат</dt>
+            <dd className="mono">{fmtMoney(n.costFact)}</dd>
             <dt>Цена за единицу</dt>
             <dd className="mono">
               {n.costPerUnit === null ? "—" : `${fmtMoney(n.costPerUnit)}/${n.unit || "ед."}`}
@@ -1350,8 +1325,9 @@ export default function ScheduleModule() {
           >
             {fmtDaysGain(n.daysGain)}
           </div>
-          <div className="sch-c sch-c-cost mono" title={costWords(n, spentByCode(n.task.code, costByWork))}>
-            {n.costTotal === null ? "—" : fmtMoney(n.costTotal)}
+          <div className="sch-c sch-c-cost mono" title={costWords(n)}>
+            <div>{fmtMoney(n.costTotal)}</div>
+            {n.costFact !== null && <small>факт {fmtMoney(n.costFact)}</small>}
           </div>
           <div className="sch-c sch-c-status">
             <span className={`status-pill ${SCHEDULE_STATUS_CLASS[n.status]}`}>
@@ -1376,7 +1352,8 @@ export default function ScheduleModule() {
             )}
             {n.costTotal !== null && (
               <span className="mono">
-                {fmtMoney(n.costTotal)} · выполнено {fmtMoney(n.costDone)}
+                План {fmtMoney(n.costTotal)} · выполнено {fmtMoney(n.costDone)}
+                {n.costFact !== null && ` · факт затрат ${fmtMoney(n.costFact)}`}
               </span>
             )}
           </div>
@@ -1592,10 +1569,18 @@ export default function ScheduleModule() {
           </div>
         )}
 
+        {unlinkedCost && (
+          <div className="chip-row">
+            <span className="chip st-neutral">
+              Без привязки к ГПР · план {fmtMoney(unlinkedCost.plan)} · факт {fmtMoney(unlinkedCost.fact)}
+            </span>
+          </div>
+        )}
+
         {summary.costTotal !== null && (
           <div className="chip-row">
             <span className="chip st-neutral" title="Стоимость работ, у которых она проставлена">
-              стоимость <span className="n mono">{fmtMoney(summary.costTotal)}</span>
+              план затрат <span className="n mono">{fmtMoney(summary.costTotal)}</span>
             </span>
             <span
               className="chip st-good"
@@ -1854,6 +1839,7 @@ export default function ScheduleModule() {
           objectId={objectId}
           objectName={currentObject?.name || "объект"}
           tasks={tasks}
+          exportPlanByTask={new Map(flattenTree(tree).map((node) => [node.task.id, node.costTotal]))}
           onClose={() => setImportOpen(false)}
           onDone={async (message, schemaGap) => {
             setBanner(message);
@@ -2243,36 +2229,8 @@ export default function ScheduleModule() {
             </div>
           )}
 
-          <div className="field-row">
-            <div className="field">
-              <label>Стоимость этапа, ₽</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="0"
-                disabled={editingIsGroup}
-                value={form.costTotal}
-                onChange={(e) => setForm({ ...form, costTotal: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>Цена за единицу, ₽</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder={form.volumeTotal ? "0" : "нужен объём работы"}
-                disabled={editingIsGroup || !form.volumeTotal}
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-              />
-            </div>
-          </div>
-          <p className="hint" style={{ marginTop: 0 }}>
-            Хранится только стоимость этапа — по договору или по смете. Цена за единицу
-            считается от неё и объёма и служит вторым способом ввести то же самое:
-            впишете расценку — получите сумму. Освоение считается от процента готовности.
+          <p className="hint">
+            План и факт затрат по работе ведутся в <Link href="/budget">«Сметах и бюджете»</Link>.
           </p>
 
           <div className="calc-box">
@@ -2288,8 +2246,12 @@ export default function ScheduleModule() {
               <dd className="mono" title={deviationWords(formPreview.deviation)}>
                 {fmtDeviation(formPreview.deviation)}
               </dd>
+              <dt>План затрат</dt>
+              <dd className="mono">{fmtMoney(plannedCost)}</dd>
+              <dt>Цена за единицу</dt>
+              <dd className="mono">{unitPrice}</dd>
               <dt>Освоено, ₽</dt>
-              <dd className="mono">{doneCost === null ? "—" : fmtMoney(doneCost)}</dd>
+              <dd className="mono">{fmtMoney(doneCost)}</dd>
             </dl>
             <p className="hint">
               Считается автоматически по датам и % факта, в БД не хранится.

@@ -19,6 +19,7 @@ interface Props {
   objectId: string;
   objectName: string;
   tasks: ScheduleTask[];
+  exportPlanByTask: ReadonlyMap<string, number | null>;
   onClose: () => void;
   /** schemaMissing — база отстала от приложения, нужна подготовка хранилища. */
   onDone: (message: string, schemaMissing?: boolean) => void;
@@ -57,7 +58,7 @@ const SAMPLE: (string | number)[][] = [
 /** Поля этапа, появившиеся после первых версий: отставшая база их может не знать. */
 const OPTIONAL_COLUMNS = ["code", "tracking", "kind", "reason", "volume_total", "unit", "cost_total"];
 
-export default function ScheduleImport({ objectId, objectName, tasks, onClose, onDone }: Props) {
+export default function ScheduleImport({ objectId, objectName, tasks, exportPlanByTask, onClose, onDone }: Props) {
   const [missingColumns, setMissingColumns] = useState<Set<string>>(new Set());
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [fileName, setFileName] = useState("");
@@ -123,7 +124,7 @@ export default function ScheduleImport({ objectId, objectName, tasks, onClose, o
         t.end_plan ? fmtDate(t.end_plan) : "",
         t.volume_total ?? "",
         t.unit ?? "",
-        t.cost_total ?? "",
+        exportPlanByTask.get(t.id) ?? "",
         t.start_fact ? fmtDate(t.start_fact) : "",
         t.end_fact ? fmtDate(t.end_fact) : "",
         t.progress_fact ?? "",

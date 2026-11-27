@@ -283,6 +283,7 @@ end $$;
 create table if not exists public.budget_lines (
   id              uuid primary key default gen_random_uuid(),
   object_id       uuid        not null references public.objects (id) on delete cascade,
+  task_id         uuid        references public.schedule_tasks (id) on delete set null,
   section         text        not null check (section in ('materials', 'works', 'equipment')),
   name            text        not null,
   plan_amount     numeric(14, 2) not null default 0 check (plan_amount >= 0),
@@ -298,6 +299,8 @@ create table if not exists public.budget_lines (
   updated_at      timestamptz not null default now()
 );
 alter table public.budget_lines add column if not exists zero_fact_confirmed boolean not null default false;
+alter table public.budget_lines add column if not exists task_id uuid references public.schedule_tasks (id) on delete set null;
+create index if not exists budget_lines_task_idx on public.budget_lines (task_id) where task_id is not null;
 create index if not exists budget_lines_object_idx on public.budget_lines (object_id, section);
 
 create table if not exists public.customer_payments (
