@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { OBJECT_KEY, readSetting, useHydrated, useToday, writeSetting } from "@/lib/useClient";
 import { supabase } from "@/lib/supabaseClient";
@@ -87,6 +87,18 @@ const STATUS_ORDER: Record<ScheduleStatus, number> = { behind: 0, on_track: 1, c
 /** Выбранный объект — общий для всех вкладок: выбрали на одной, открыт и на остальных. */
 const LS_OBJECT_KEY = OBJECT_KEY;
 const LS_VIEW_KEY = "atr.schedule.view";
+const LS_COMPACT_VIEW_KEY = "atr.schedule.compactView";
+const COMPACT_SCHEDULE = "(max-width: 1180px)";
+
+function subscribeToScheduleWidth(onChange: () => void) {
+  const media = window.matchMedia(COMPACT_SCHEDULE);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+function isCompactSchedule() {
+  return window.matchMedia(COMPACT_SCHEDULE).matches;
+}
 
 /** Предложение сохранить только что заведённую работу в справочник. */
 interface AskStage {
@@ -254,13 +266,15 @@ export default function ScheduleModule() {
   const today = useToday();
   const hydrated = useHydrated();
 
-  const [viewOverride, setViewOverride] = useState<ViewMode | null>(null);
+  const compact = useSyncExternalStore(subscribeToScheduleWidth, isCompactSchedule, () => false);
+  const viewKey = compact ? LS_COMPACT_VIEW_KEY : LS_VIEW_KEY;
+  const [viewOverride, setViewOverride] = useState<Partial<Record<string, ViewMode>>>({});
   const storedView = useMemo(() => {
     if (!hydrated) return null;
-    const v = readSetting(LS_VIEW_KEY);
+    const v = readSetting(viewKey);
     return v === "tree" || v === "table" || v === "gantt" ? v : null;
-  }, [hydrated]);
-  const view: ViewMode = viewOverride ?? storedView ?? "tree";
+  }, [hydrated, viewKey]);
+  const view: ViewMode = viewOverride[viewKey] ?? storedView ?? "tree";
   const [scale, setScale] = useState<GanttScale>("week");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("");
@@ -511,8 +525,8 @@ export default function ScheduleModule() {
   }, [tree]);
 
   function changeView(v: ViewMode) {
-    setViewOverride(v);
-    writeSetting(LS_VIEW_KEY, v);
+    setViewOverride((previous) => ({ ...previous, [viewKey]: v }));
+    writeSetting(viewKey, v);
   }
 
   function toggleCollapse(id: string) {
@@ -1273,7 +1287,7 @@ export default function ScheduleModule() {
         >
           <div
             className="sch-c sch-c-name"
-            style={isTree ? { paddingInlineStart: `min(${12 + n.level * 16}px, 16%)` } : undefined}
+            style={isTree ? { paddingInlineStart: 12 + n.level * 16 } : undefined}
           >
             {isTree && hasKids ? (
               <button
@@ -1334,33 +1348,61 @@ export default function ScheduleModule() {
               {SCHEDULE_STATUS_LABEL[n.status]}
             </span>
           </div>
-          <div className="sch-c sch-c-meta">
-            <span className="mono">{fmtRange(n.startPlan, n.endPlan)}</span>
-            <span className="mono">
-              план {fmtPercent(n.progressPlan)} · факт {fmtPercent(n.progressFact)}
-            </span>
-            <span className={`mono${n.deviation != null && n.deviation < 0 ? " is-neg" : ""}`}>
-              {fmtDeviation(n.deviation)}
-            </span>
-            {n.daysGain !== null && (
-              <span className={`mono${n.daysGain > 0 ? " is-pos" : n.daysGain < 0 ? " is-neg" : ""}`}>
-                {fmtDaysGain(n.daysGain)}
-              </span>
-            )}
-            {n.volumeTotal != null && (
-              <span className="mono">{`${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim()}</span>
-            )}
-            {(n.costTotal !== null || n.costFact !== null) && (
-              <span className="sch-mobile-cost mono">
-                {n.costTotal !== null && <span>Затраты по плану {fmtMoney(n.costTotal)}</span>}
-                {n.costFact !== null && <span>Факт затрат {fmtMoney(n.costFact)}</span>}
-                {n.costDone !== null && <span>Выполнено {fmtMoney(n.costDone)}</span>}
-              </span>
-            )}
-          </div>
         </div>
         {detailId === n.task.id && <div className="sch-detail-row">{renderDetail(n)}</div>}
       </Fragment>
+    );
+  }
+
+  function renderCompactTask(n: TaskNode) {
+    const id = n.task.id;
+    const isTree = view === "tree";
+    const expanded = !collapsedNow.has(id);
+    const detailsOpen = detailId === id;
+    return (
+      <article key={id} className={`sch-task-card${n.isGroup ? " is-group" : ""}`}>
+        <div className="sch-task-card-head" style={{ paddingInlineStart: isTree ? Math.min(n.level, 3) * 7 : 0 }}>
+          {isTree && n.isGroup && (
+            <button
+              type="button"
+              className="sch-task-toggle"
+              aria-label={`${expanded ? "Свернуть" : "Развернуть"} ${n.task.name}`}
+              aria-expanded={expanded}
+              disabled={filtering}
+              onClick={() => toggleCollapse(id)}
+            >
+              {expanded ? "▾" : "▸"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="sch-task-name"
+            aria-expanded={detailsOpen}
+            onClick={() => toggleDetail(id)}
+          >
+            <span>{n.task.code && <span className="sch-code">{n.task.code}</span>}{n.task.name}</span>
+            <span aria-hidden="true">{detailsOpen ? "−" : "›"}</span>
+          </button>
+        </div>
+        {!isTree && parentNameById.get(id) && <div className="sch-task-parent">{parentNameById.get(id)}</div>}
+        <div className="sch-task-status">
+          <span className={`status-pill ${SCHEDULE_STATUS_CLASS[n.status]}`}>{SCHEDULE_STATUS_LABEL[n.status]}</span>
+          {n.task.kind === "extra" && <span className="tag-extra" title={n.task.reason || undefined}>Допработа</span>}
+        </div>
+        <dl className="sch-task-values">
+          <div><dt>Сроки по плану</dt><dd>{fmtRange(n.startPlan, n.endPlan)}</dd></div>
+          <div><dt>Сроки по факту</dt><dd>{fmtRange(n.startFact, n.endFact)}</dd></div>
+          <div><dt>Готовность по плану</dt><dd>{fmtPercent(n.progressPlan)}</dd></div>
+          <div><dt>Готовность по факту</dt><dd>{fmtPercent(n.progressFact)}</dd></div>
+          {(n.costTotal !== null || n.costFact !== null) && (
+            <>
+              <div><dt>План затрат</dt><dd>{fmtMoney(n.costTotal)}</dd></div>
+              <div><dt>Факт затрат</dt><dd>{fmtMoney(n.costFact)}</dd></div>
+            </>
+          )}
+        </dl>
+        {detailsOpen && renderDetail(n)}
+      </article>
     );
   }
 
@@ -1376,124 +1418,8 @@ export default function ScheduleModule() {
 
   const showRows = !!today && !loadingTasks;
 
-  return (
-    <div className="schedule-module">
-      {banner && (
-        <div className="banner show" onClick={() => setBanner(null)} role="status">
-          {banner}
-        </div>
-      )}
-      {schemaMissing && <SchemaSetup onRecheck={() => loadTasks(objectId)} />}
-
-      {askStage && (
-        <div className="ask-card">
-          <div className="ask-head">
-            <strong>Сохранить «{askStage.name}» в справочник?</strong>
-            <span className="ask-sub">
-              Такой работы в справочнике нет. Сохраните — и на других объектах её можно
-              будет отметить галочкой, а не набирать заново.
-            </span>
-          </div>
-          <div className="ask-fields">
-            <div className="field">
-              <label>Раздел справочника</label>
-              <input
-                type="text"
-                list="atr-catalog-sections"
-                value={askStage.section}
-                onChange={(e) => setAskStage({ ...askStage, section: e.target.value })}
-              />
-              <datalist id="atr-catalog-sections">
-                {allStageGroups.map((g) => (
-                  <option key={g.key} value={g.name} />
-                ))}
-                <option value={CUSTOM_SECTION} />
-              </datalist>
-            </div>
-            <div className="field">
-              <label>Ед. изм.</label>
-              <input
-                type="text"
-                list="atr-units"
-                placeholder="м³"
-                value={askStage.unit}
-                onChange={(e) => setAskStage({ ...askStage, unit: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>В задании выдавать</label>
-              <select
-                value={askStage.tracking}
-                onChange={(e) =>
-                  setAskStage({ ...askStage, tracking: e.target.value as TrackingMode })
-                }
-              >
-                <option value="volume">{TRACKING_LABEL.volume}</option>
-                <option value="percent">{TRACKING_LABEL.percent}</option>
-              </select>
-            </div>
-          </div>
-          <div className="ask-foot">
-            <button className="btn btn-ghost" onClick={declineSaveStage} disabled={askBusy}>
-              Не нужно
-            </button>
-            <button className="btn btn-primary" onClick={confirmSaveStage} disabled={askBusy}>
-              {askBusy ? "Сохранение…" : "Сохранить в справочник"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="obj-picker">
-        <CurrentObject name={objects.find((o) => o.id === objectId)?.name ?? null} loading={loadingObjects} />
-        {currentObject && (
-          <span className="obj-picker-meta mono">
-            {fmtRange(currentObject.start_date, currentObject.end_date_planned)}
-          </span>
-        )}
-      </div>
-
-      <div className="stats">
-        <div className="stat-total">
-          <span className="n">{showRows ? summary.total : "—"}</span>
-          <span className="l">
-            {plural(summary.total, "этап в графике", "этапа в графике", "этапов в графике")}
-          </span>
-        </div>
-        <div className="chip-row">
-          <span className="chip st-good">
-            <span className="n">{summary.onTrack}</span> в графике
-          </span>
-          <span className="chip st-bad">
-            <span className="n">{summary.behind}</span> отставание
-          </span>
-          <span className="chip st-neutral">
-            <span className="n">{summary.closed}</span> закрыто
-          </span>
-          {summary.extra > 0 && (
-            <span className="chip st-warn">
-              <span className="n">{summary.extra}</span>{" "}
-              {plural(summary.extra, "непредвиденная", "непредвиденные", "непредвиденных")}
-            </span>
-          )}
-        </div>
-        <div className="chip-row">
-          <span className="chip st-neutral">
-            план <span className="n">{fmtPercent(summary.progressPlan)}</span>
-          </span>
-          <span
-            className={`chip ${
-              summary.progressFact != null &&
-              summary.progressPlan != null &&
-              summary.progressFact + 5 < summary.progressPlan
-                ? "st-bad"
-                : "st-good"
-            }`}
-          >
-            факт <span className="n">{fmtPercent(summary.progressFact)}</span>
-          </span>
-          <span className="chip st-neutral mono">{fmtRange(summary.startPlan, summary.endPlan)}</span>
-        </div>
+  const summaryDetails = (
+    <>
         <div className="chip-row">
           <span
             className={`chip ${
@@ -1619,6 +1545,133 @@ export default function ScheduleModule() {
             )}
           </div>
         )}
+    </>
+  );
+
+  return (
+    <div className="schedule-module">
+      {banner && (
+        <div className="banner show" onClick={() => setBanner(null)} role="status">
+          {banner}
+        </div>
+      )}
+      {schemaMissing && <SchemaSetup onRecheck={() => loadTasks(objectId)} />}
+
+      {askStage && (
+        <div className="ask-card">
+          <div className="ask-head">
+            <strong>Сохранить «{askStage.name}» в справочник?</strong>
+            <span className="ask-sub">
+              Такой работы в справочнике нет. Сохраните — и на других объектах её можно
+              будет отметить галочкой, а не набирать заново.
+            </span>
+          </div>
+          <div className="ask-fields">
+            <div className="field">
+              <label>Раздел справочника</label>
+              <input
+                type="text"
+                list="atr-catalog-sections"
+                value={askStage.section}
+                onChange={(e) => setAskStage({ ...askStage, section: e.target.value })}
+              />
+              <datalist id="atr-catalog-sections">
+                {allStageGroups.map((g) => (
+                  <option key={g.key} value={g.name} />
+                ))}
+                <option value={CUSTOM_SECTION} />
+              </datalist>
+            </div>
+            <div className="field">
+              <label>Ед. изм.</label>
+              <input
+                type="text"
+                list="atr-units"
+                placeholder="м³"
+                value={askStage.unit}
+                onChange={(e) => setAskStage({ ...askStage, unit: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>В задании выдавать</label>
+              <select
+                value={askStage.tracking}
+                onChange={(e) =>
+                  setAskStage({ ...askStage, tracking: e.target.value as TrackingMode })
+                }
+              >
+                <option value="volume">{TRACKING_LABEL.volume}</option>
+                <option value="percent">{TRACKING_LABEL.percent}</option>
+              </select>
+            </div>
+          </div>
+          <div className="ask-foot">
+            <button className="btn btn-ghost" onClick={declineSaveStage} disabled={askBusy}>
+              Не нужно
+            </button>
+            <button className="btn btn-primary" onClick={confirmSaveStage} disabled={askBusy}>
+              {askBusy ? "Сохранение…" : "Сохранить в справочник"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="obj-picker">
+        <CurrentObject name={objects.find((o) => o.id === objectId)?.name ?? null} loading={loadingObjects} />
+        {currentObject && (
+          <span className="obj-picker-meta mono">
+            {fmtRange(currentObject.start_date, currentObject.end_date_planned)}
+          </span>
+        )}
+      </div>
+
+      <div className="stats sch-summary-main">
+        <div className="stat-total">
+          <span className="n">{showRows ? summary.total : "—"}</span>
+          <span className="l">
+            {plural(summary.total, "этап в графике", "этапа в графике", "этапов в графике")}
+          </span>
+        </div>
+        <div className="chip-row">
+          <span className="chip st-good">
+            <span className="n">{summary.onTrack}</span> в графике
+          </span>
+          <span className="chip st-bad">
+            <span className="n">{summary.behind}</span> отставание
+          </span>
+          <span className="chip st-neutral">
+            <span className="n">{summary.closed}</span> закрыто
+          </span>
+          {summary.extra > 0 && (
+            <span className="chip st-warn">
+              <span className="n">{summary.extra}</span>{" "}
+              {plural(summary.extra, "непредвиденная", "непредвиденные", "непредвиденных")}
+            </span>
+          )}
+        </div>
+        <div className="chip-row">
+          <span className="chip st-neutral">
+            план <span className="n">{fmtPercent(summary.progressPlan)}</span>
+          </span>
+          <span
+            className={`chip ${
+              summary.progressFact != null &&
+              summary.progressPlan != null &&
+              summary.progressFact + 5 < summary.progressPlan
+                ? "st-bad"
+                : "st-good"
+            }`}
+          >
+            факт <span className="n">{fmtPercent(summary.progressFact)}</span>
+          </span>
+          <span className="chip st-neutral mono">{fmtRange(summary.startPlan, summary.endPlan)}</span>
+        </div>
+        {compact ? (
+          <details className="sch-summary-details">
+            <summary>Сроки, отставания и затраты</summary>
+            <div className="sch-summary-extra">{summaryDetails}</div>
+          </details>
+        ) : summaryDetails}
       </div>
 
       <div className="toolbar">
@@ -1730,7 +1783,48 @@ export default function ScheduleModule() {
         </div>
       </div>
 
-      {view === "tree" && (
+      {compact && view !== "gantt" && (
+        <div className="sch-task-list">
+          {view === "table" && (
+            <div className="sch-compact-sort">
+              <label htmlFor="sch-sort">Сортировка</label>
+              <select
+                id="sch-sort"
+                className="filter"
+                value={sortKey}
+                onChange={(event) => {
+                  setSortKey(event.target.value as SortKey);
+                  setSortAsc(true);
+                }}
+              >
+                <option value="name">Этап</option>
+                <option value="startPlan">Начало по плану</option>
+                <option value="endPlan">Конец по плану</option>
+                <option value="duration">Длительность</option>
+                <option value="progressPlan">Готовность по плану</option>
+                <option value="progressFact">Готовность по факту</option>
+                <option value="deviation">Отклонение</option>
+                <option value="daysGain">Дни к сроку</option>
+                <option value="cost">План затрат</option>
+                <option value="status">Статус</option>
+              </select>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                aria-label={sortAsc ? "Сортировать по убыванию" : "Сортировать по возрастанию"}
+                onClick={() => setSortAsc((ascending) => !ascending)}
+              >
+                {sortAsc ? "↑" : "↓"}
+              </button>
+            </div>
+          )}
+          {showRows && (view === "tree" ? treeRows : tableRows).length
+            ? (view === "tree" ? treeRows : tableRows).map(renderCompactTask)
+            : <div className="empty-state">{emptyText}</div>}
+        </div>
+      )}
+
+      {!compact && view === "tree" && (
         <div className="sch-wrap">
           <div className="sch-head">
             <div className="sch-c sch-c-name">Этап</div>
@@ -1752,7 +1846,7 @@ export default function ScheduleModule() {
         </div>
       )}
 
-      {view === "table" && (
+      {!compact && view === "table" && (
         <div className="sch-wrap">
           <div className="sch-head is-sortable">
             <button className="sch-c sch-c-name" onClick={() => sortBy("name")}>
@@ -1815,6 +1909,7 @@ export default function ScheduleModule() {
               scale={scale}
               selectedId={detailId}
               onPick={toggleDetail}
+              compact={compact}
             />
             <div className="gantt-legend">
               <span><i className="lg-plan" /> план</span>

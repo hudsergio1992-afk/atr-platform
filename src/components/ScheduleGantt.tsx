@@ -28,9 +28,10 @@ interface Props {
   scale: GanttScale;
   selectedId: string | null;
   onPick: (id: string) => void;
+  compact: boolean;
 }
 
-export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }: Props) {
+export default function ScheduleGantt({ rows, today, scale, selectedId, onPick, compact }: Props) {
   const dbl = useDoubleTap();
   const model = useMemo(() => {
     const starts: number[] = [];
@@ -170,7 +171,16 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
             key={r.task.id}
             className={`gantt-name${r.isGroup ? " is-group" : ""}${selectedId === r.task.id ? " is-sel" : ""}`}
             style={{ paddingInlineStart: `min(${10 + r.level * 14}px, 24%)` }}
-            onClick={dbl(r.task.id, () => onPick(r.task.id))}
+            onClick={compact ? () => onPick(r.task.id) : dbl(r.task.id, () => onPick(r.task.id))}
+            role={compact ? "button" : undefined}
+            tabIndex={compact ? 0 : undefined}
+            aria-expanded={compact ? selectedId === r.task.id : undefined}
+            onKeyDown={compact ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onPick(r.task.id);
+              }
+            } : undefined}
             title={[
               r.task.code ? `${r.task.code} ${r.task.name}` : r.task.name,
               r.costTotal !== null ? `План затрат ${fmtMoney(r.costTotal)}` : "",
@@ -233,7 +243,7 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
                 <div
                   key={r.task.id}
                   className={`gantt-row${selectedId === r.task.id ? " is-sel" : ""}`}
-                  onClick={dbl(r.task.id, () => onPick(r.task.id))}
+                  onClick={compact ? () => onPick(r.task.id) : dbl(r.task.id, () => onPick(r.task.id))}
                   title={DOUBLE_TAP_HINT}
                 >
                   {plan && (
