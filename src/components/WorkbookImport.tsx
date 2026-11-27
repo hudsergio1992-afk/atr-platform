@@ -141,7 +141,7 @@ export default function WorkbookImport({ object, onClose, onDone }: Props) {
               .from("schedule_tasks")
               .update({
                 name: r.name, start_plan: r.startPlan, end_plan: r.endPlan, parent_id: parentId,
-                ...(r.costTotal !== null ? { cost_total: r.costTotal } : {}),
+                ...(!parts.smeta && r.costTotal !== null ? { cost_total: r.costTotal } : {}),
                 updated_at: now,
                 history: [...(old?.history || []), note(r.changes.join("; ") || "Перенесена в раздел потока")],
               })
@@ -151,7 +151,7 @@ export default function WorkbookImport({ object, onClose, onDone }: Props) {
             inserts.push({
               object_id: object.id, parent_id: parentId, sort_order: Number(r.code) * 10, name: r.name, code: r.code,
               start_plan: r.startPlan, end_plan: r.endPlan, start_fact: null, end_fact: null, tracking: "percent",
-              volume_total: null, unit: null, cost_total: r.costTotal, kind: "plan", progress_fact: 0,
+              volume_total: null, unit: null, cost_total: parts.smeta ? null : r.costTotal, kind: "plan", progress_fact: 0,
               history: [note("Работа загружена из ГПР")], created_at: now, updated_at: now,
             });
           }
@@ -166,7 +166,8 @@ export default function WorkbookImport({ object, onClose, onDone }: Props) {
 
       /* ---------- 2. Смета → статьи бюджета ---------- */
       if (parts.smeta) {
-        const { budget } = await loadExisting();
+        const { tasks, budget } = await loadExisting();
+        const taskIdByCode = new Map(tasks.map((task) => [task.code, task.id]));
         const byId = new Map(budget.map((b) => [b.id, b]));
         const inserts = [];
         for (const l of plan.smeta.lines) {
@@ -181,6 +182,7 @@ export default function WorkbookImport({ object, onClose, onDone }: Props) {
           } else {
             inserts.push({
               object_id: object.id, section: l.section, name: l.name, plan_amount: l.plan, fact_amount: 0,
+              task_id: l.workCode ? taskIdByCode.get(l.workCode) ?? null : null,
               forecast_amount: null, note: l.note, history: [note("Статья загружена из сметы")], created_at: now, updated_at: now,
             });
           }

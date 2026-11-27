@@ -21,8 +21,8 @@ type LinesOrder = "sections" | "schedule";
 const LS_ORDER_KEY = "atr.budget.order";
 import SchemaSetup from "@/components/SchemaSetup";
 import CurrentObject from "@/components/CurrentObject";
-import { workCodeOf } from "@/lib/zeroCost";
-import { LineRules, makeLineRules, scheduleMaps } from "@/lib/finance";
+import { budgetTaskLookup, workCodeOf } from "@/lib/zeroCost";
+import { LineRules, makeLineRules } from "@/lib/finance";
 import { buildTree, flattenTree, TaskNode } from "@/lib/schedule";
 import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
@@ -41,6 +41,7 @@ const SECTION_VAR: Record<BudgetSection, string> = {
 /* ============================== Статьи бюджета ============================== */
 
 interface LineForm {
+  taskId: string;
   section: BudgetSection;
   name: string;
   planAmount: string;
@@ -51,6 +52,7 @@ interface LineForm {
 }
 
 const EMPTY_LINE_FORM: LineForm = {
+  taskId: "",
   section: "materials",
   name: "",
   planAmount: "",
@@ -63,6 +65,7 @@ const EMPTY_LINE_FORM: LineForm = {
 function lineToForm(l: BudgetLine | null): LineForm {
   if (!l) return { ...EMPTY_LINE_FORM };
   return {
+    taskId: l.task_id ?? "",
     section: l.section,
     name: l.name,
     planAmount: String(l.plan_amount ?? 0),
@@ -208,8 +211,9 @@ export default function BudgetModule() {
 
   // Одно правило с дашбордом: экономия — по закрытым работам, перерасход — сразу, накладные — после сдачи объекта.
   const objectDone = objects.find((o) => o.id === objectId)?.status === "done";
-  const { progress, names } = useMemo(() => scheduleMaps(tasks), [tasks]);
-  const rules = useMemo(() => makeLineRules(progress, names, objectDone), [progress, names, objectDone]);
+  const rules = useMemo(() => makeLineRules(tasks, objectDone), [tasks, objectDone]);
+  const findBudgetTask = useMemo(() => budgetTaskLookup(tasks), [tasks]);
+  const taskOptions = useMemo(() => flattenTree(buildTree(tasks, new Date().toISOString().slice(0, 10))), [tasks]);
 
   const bySection = useMemo(() => {
     const m = new Map<BudgetSection, { plan: number; fact: number; forecast: number; lines: BudgetLine[] }>();
@@ -252,14 +256,16 @@ export default function BudgetModule() {
   function openLinePanel(id: string | null, task?: ScheduleTask) {
     setEditingLineId(id);
     const line = id ? lines.find((item) => item.id === id) || null : null;
+    const work = task ?? (line ? findBudgetTask(line) : undefined);
     setLineForm(
       task
         ? {
             ...EMPTY_LINE_FORM,
+            taskId: task.id,
             section: sectionFilter === "all" ? "works" : sectionFilter,
             name: taskLabel(task),
           }
-        : lineToForm(line)
+        : { ...lineToForm(line), taskId: work?.id ?? "" }
     );
     setLinePanelOpen(true);
   }
@@ -287,8 +293,10 @@ export default function BudgetModule() {
     setBanner(null);
     setLineSaving(true);
     const now = new Date().toISOString();
+    const work = findBudgetTask({ task_id: lineForm.taskId, name: lineForm.name.trim() });
     const payload = {
       object_id: objectId,
+      task_id: work?.id ?? null,
       section: lineForm.section,
       name: lineForm.name.trim(),
       plan_amount: plan,
@@ -309,6 +317,8 @@ export default function BudgetModule() {
       const parts: string[] = [];
       if (old?.section !== payload.section) parts.push(`Раздел: ${BUDGET_SECTION_LABEL[old!.section]} → ${BUDGET_SECTION_LABEL[payload.section]}`);
       if (old?.name !== payload.name) parts.push(`Название: ${old?.name} → ${payload.name}`);
+      const oldWork = old ? findBudgetTask(old) : undefined;
+      if (oldWork?.id !== work?.id) parts.push(`Работа по графику: ${oldWork?.name ?? "—"} → ${work?.name ?? "—"}`);
       if (Number(old?.plan_amount) !== plan) parts.push(`План: ${fmtMoney(old?.plan_amount)} → ${fmtMoney(plan)}`);
       if (Number(old?.fact_amount) !== fact) parts.push(`Факт: ${fmtMoney(old?.fact_amount)} → ${fmtMoney(fact)}`);
       if (!!old?.zero_fact_confirmed !== (fact === 0 && lineForm.zeroConfirmed))
@@ -544,6 +554,7 @@ export default function BudgetModule() {
 
           <div className="section-block">
             <h3 className="section-title">Статьи бюджета</h3>
+            <p className="hint">План и факт по привязанным статьям отображаются в «Графике работ».</p>
             <div className="toolbar" style={{ padding: "0 0 14px" }}>
               <select className="filter" value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value as SectionFilter)}>
                 <option value="all">Все разделы</option>
@@ -654,6 +665,17 @@ export default function BudgetModule() {
           </button>
         </div>
         <div className="panel-body">
+          <div className="field">
+            <label htmlFor="budget-task">Работа по графику</label>
+            <select id="budget-task" value={lineForm.taskId} onChange={(e) => setLineForm({ ...lineForm, taskId: e.target.value })}>
+              <option value="">По шифру в названии, если указан</option>
+              {taskOptions.map(({ task, level }) => (
+                <option key={task.id} value={task.id}>
+                  {`${"— ".repeat(level)}${taskLabel(task)}`}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="field">
             <label>Раздел</label>
             <select value={lineForm.section} onChange={(e) => setLineForm({ ...lineForm, section: e.target.value as BudgetSection })}>
@@ -788,21 +810,12 @@ function taskLabel(task: ScheduleTask): string {
 
 function groupBudgetBySchedule(tasks: ScheduleTask[], lines: BudgetLine[]): BudgetGroup[] {
   const tree = buildTree(tasks, new Date().toISOString().slice(0, 10));
-  const taskIdsByCode = new Map<string, string>();
-  for (const { task } of flattenTree(tree)) {
-    if (task.code) taskIdsByCode.set(task.code, task.id);
-  }
+  const findTask = budgetTaskLookup(tasks);
 
   const linesByTask = new Map<string, BudgetLine[]>();
   const unlinked: BudgetLine[] = [];
   for (const line of lines.slice().sort(byBudgetName)) {
-    // У старых статей с шифром подработы может быть только родительская работа в ГПР.
-    let code = workCodeOf(line.name);
-    while (code && !taskIdsByCode.has(code)) {
-      const parentEnd = code.lastIndexOf(".");
-      code = parentEnd < 0 ? null : code.slice(0, parentEnd);
-    }
-    const taskId = code ? taskIdsByCode.get(code) : undefined;
+    const taskId = findTask(line)?.id;
     if (!taskId) {
       unlinked.push(line);
       continue;
@@ -1104,7 +1117,7 @@ function LinesTable({
             <span className="is-deferred">
               {visibleSections.length < BUDGET_SECTIONS.length ? "Нет статей в выбранном разделе" : "Статей бюджета нет"}
             </span>
-            {task?.code && (
+            {task && (
               <button className="btn" style={{ marginLeft: 8 }} onClick={() => onAddForTask(task)}>
                 + Статья
               </button>

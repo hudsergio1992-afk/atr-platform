@@ -1,5 +1,5 @@
 import { BudgetLine, ConstructionObject, CustomerPayment, ScheduleTask } from "@/lib/types";
-import { workCodeOf } from "@/lib/zeroCost";
+import { budgetTaskLookup, workCodeOf } from "@/lib/zeroCost";
 import { buildTree, flattenTree } from "@/lib/schedule";
 
 /**
@@ -71,19 +71,22 @@ export interface LineRules {
   progress: (l: BudgetLine) => number | null;
 }
 
-/**
- * progress — % факт работ графика по шифру; names — названия работ и этапов по шифру
- * (накладные — статьи этапа, в названии которого есть «накладн»).
- */
-export function makeLineRules(progress: Map<string, number>, names: Map<string, string>, objectDone: boolean): LineRules {
-  const isOverhead = (l: BudgetLine): boolean => {
-    const stage = workCodeOf(l.name)?.split(".")[0];
-    return /накладн/i.test(stage ? names.get(stage) || "" : "") || /накладн/i.test(l.name);
+export function makeLineRules(tasks: ScheduleTask[], objectDone: boolean): LineRules {
+  const findTask = budgetTaskLookup(tasks);
+  const today = new Date().toISOString().slice(0, 10);
+  const nodes = new Map(flattenTree(buildTree(tasks, today)).map((node) => [node.task.id, node]));
+  const namesByCode = new Map(tasks.map((task) => [task.code, task.name]));
+  const progressOf = (line: BudgetLine): number | null => {
+    const task = findTask(line);
+    return task ? nodes.get(task.id)?.progressFact ?? null : null;
   };
-  const isClosed = (l: BudgetLine): boolean => {
-    const code = workCodeOf(l.name);
-    return code !== null && (progress.get(code) ?? -1) >= 100;
+  const isOverhead = (line: BudgetLine): boolean => {
+    const task = findTask(line);
+    const stageCode = (task?.code ?? workCodeOf(line.name))?.split(".")[0];
+    return /накладн/i.test(namesByCode.get(stageCode ?? "") ?? "") ||
+      /накладн/i.test(task?.name ?? "") || /накладн/i.test(line.name);
   };
+  const isClosed = (line: BudgetLine): boolean => (progressOf(line) ?? -1) >= 100;
   const kind = (l: BudgetLine): LineKind => {
     const p = Number(l.plan_amount) || 0;
     const f = Number(l.fact_amount) || 0;
@@ -108,30 +111,7 @@ export function makeLineRules(progress: Map<string, number>, names: Map<string, 
     if (kind(l) === "counted" && (objectDone || isClosed(l))) return f;
     return l.forecast_amount !== null && l.forecast_amount !== undefined ? Number(l.forecast_amount) : Math.max(p, f);
   };
-  const progressOf = (l: BudgetLine): number | null => {
-    const code = workCodeOf(l.name);
-    return code !== null && progress.has(code) ? progress.get(code) ?? null : null;
-  };
   return { isOverhead, isClosed, kind, dev, forecast, progress: progressOf };
-}
-
-/**
- * Прогресс и названия работ графика по шифру — вход для makeLineRules.
- * У работы с подработами % берётся свёрткой подработ, как в «Графике работ»:
- * собственный % такой строки в базе не ведётся и остаётся 0, хотя все подработы закрыты.
- * Даты на это не влияют — закрыта работа или нет, решает только % готовности.
- */
-export function scheduleMaps(tasks: ScheduleTask[]) {
-  const progress = new Map<string, number>();
-  const names = new Map<string, string>();
-  const today = new Date().toISOString().slice(0, 10);
-  flattenTree(buildTree(tasks, today)).forEach((n) => {
-    const code = n.task.code;
-    if (!code) return;
-    progress.set(code, Number(n.progressFact) || 0);
-    names.set(code, n.task.name);
-  });
-  return { progress, names };
 }
 
 export function computeObjectFinance(
@@ -141,8 +121,7 @@ export function computeObjectFinance(
   payments: CustomerPayment[]
 ): ObjectFinance {
   const done = object.status === "done";
-  const { progress, names } = scheduleMaps(tasks);
-  const rules = makeLineRules(progress, names, done);
+  const rules = makeLineRules(tasks, done);
 
   let plan = 0;
   let fact = 0;

@@ -1,21 +1,10 @@
 import { supabase } from "@/lib/supabaseClient";
+import type { BudgetLine, ScheduleTask } from "@/lib/types";
 
-/**
- * Фактическая стоимость работы ставится при её закрытии.
- *
- * Факт затрат живёт в «Сметах и бюджете»: статьи привязаны к работе шифром
- * в начале названия. Закрыть работу можно, только когда её факт внесён; если
- * затрат действительно не было (давальческий материал) — с комментарием.
- */
-
-export interface WorkBudgetLine {
-  id: string;
-  name: string;
-  plan_amount: number;
-  fact_amount: number;
-  zero_fact_confirmed?: boolean;
-  history: { at: string; text: string }[];
-}
+export type WorkBudgetLine = Pick<
+  BudgetLine,
+  "id" | "name" | "task_id" | "plan_amount" | "fact_amount" | "zero_fact_confirmed" | "history"
+>;
 
 export interface CostByWork {
   plan: number;
@@ -23,60 +12,59 @@ export interface CostByWork {
   lines: WorkBudgetLine[];
 }
 
-/** Шифр работы в начале названия статьи бюджета: «4.6 Армирование … — Арматура». */
+/** Шифр старой статьи бюджета: «4.6 Армирование … — Арматура». */
 export function workCodeOf(name: string): string | null {
   return /^(\d+(?:\.\d+)*)\s/.exec(name)?.[1] ?? null;
 }
 
-/**
- * Статьи бюджета объекта, сгруппированные по шифру работы, с суммами плана и факта.
- * Статьи без шифра — под ключом "" (чтобы общий факт затрат был полным).
- */
-export async function loadCostByWork(objectId: string): Promise<Map<string, CostByWork>> {
-  const out = new Map<string, CostByWork>();
-  if (!objectId) return out;
-  const { data, error } = await supabase
+/** Старая статья без прямой привязки по-прежнему находится по шифру. */
+export function budgetTaskLookup(tasks: ScheduleTask[]) {
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const byCode = new Map<string, ScheduleTask>();
+  for (const task of tasks) {
+    if (task.code) byCode.set(task.code, task);
+  }
+
+  return (line: Pick<BudgetLine, "name" | "task_id">): ScheduleTask | undefined => {
+    if (line.task_id) return byId.get(line.task_id);
+    let code = workCodeOf(line.name);
+    while (code) {
+      const task = byCode.get(code);
+      if (task) return task;
+      const separator = code.lastIndexOf(".");
+      code = separator < 0 ? null : code.slice(0, separator);
+    }
+    return undefined;
+  };
+}
+
+export async function loadWorkBudgetLines(objectId: string) {
+  return supabase
     .from("budget_lines")
-    .select("id,name,plan_amount,fact_amount,zero_fact_confirmed,history")
+    .select("id,name,task_id,plan_amount,fact_amount,zero_fact_confirmed,history")
     .eq("object_id", objectId)
     .order("name");
-  // Бюджета нет или он недоступен — считаем, что статей у работ нет.
-  if (error || !data) return out;
-  (data as WorkBudgetLine[]).forEach((l) => {
-    const code = workCodeOf(l.name) ?? "";
-    const cur = out.get(code) || { plan: 0, fact: 0, lines: [] };
-    cur.plan += Number(l.plan_amount) || 0;
-    cur.fact += Number(l.fact_amount) || 0;
-    cur.lines.push(l);
-    out.set(code, cur);
-  });
-  return out;
 }
 
-/**
- * Внесён ли факт затрат по работе: есть статьи и по ним потрачено больше нуля,
- * либо у каждой статьи факт внесён или подтверждён нулевым (затрат не было).
- */
-export function workFactEntered(code: string | null, costs: Map<string, CostByWork>): boolean {
-  const c = code ? costs.get(code) : undefined;
-  if (!c || !c.lines.length) return false;
-  return c.fact > 0 || c.lines.every((l) => Number(l.fact_amount) > 0 || !!l.zero_fact_confirmed);
+/** Пустой ключ — статьи объекта без работы. */
+export function groupWorkCosts(tasks: ScheduleTask[], lines: WorkBudgetLine[]): Map<string, CostByWork> {
+  const findTask = budgetTaskLookup(tasks);
+  const costs = new Map<string, CostByWork>();
+  for (const line of lines) {
+    const key = findTask(line)?.id ?? "";
+    const current = costs.get(key) ?? { plan: 0, fact: 0, lines: [] };
+    current.plan += Number(line.plan_amount) || 0;
+    current.fact += Number(line.fact_amount) || 0;
+    current.lines.push(line);
+    costs.set(key, current);
+  }
+  return costs;
 }
 
-/**
- * Потрачено по бюджету на работу или этап: статьи с этим шифром и шифрами вложенных работ
- * («4» — это 4, 4.1, 4.6 …). Без шифра — весь факт объекта, null — если статей нет.
- */
-export function spentByCode(code: string | null, costs: Map<string, CostByWork>): number | null {
-  let sum = 0;
-  let found = false;
-  costs.forEach((c, k) => {
-    if (code === null || k === code || k.startsWith(code + ".")) {
-      sum += c.fact;
-      found = true;
-    }
-  });
-  return found ? Math.round(sum * 100) / 100 : null;
+export function workFactEntered(taskId: string, costs: Map<string, CostByWork>): boolean {
+  const cost = costs.get(taskId);
+  return !!cost?.lines.length &&
+    (cost.fact > 0 || cost.lines.every((line) => Number(line.fact_amount) > 0 || !!line.zero_fact_confirmed));
 }
 
 /** Название статьи, которая заводится при закрытии работы без статей бюджета. */

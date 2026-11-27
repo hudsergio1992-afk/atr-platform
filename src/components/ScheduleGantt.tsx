@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { SCHEDULE_STATUS_CLASS, SCHEDULE_STATUS_LABEL } from "@/lib/types";
 import { dayToISO, parseDay, TaskNode } from "@/lib/schedule";
-import { fmtDate, fmtPercent } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtPercent } from "@/lib/format";
 import { DOUBLE_TAP_HINT, useDoubleTap } from "@/lib/useDoubleTap";
 
 export type GanttScale = "day" | "week" | "month";
@@ -171,7 +171,11 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
             className={`gantt-name${r.isGroup ? " is-group" : ""}${selectedId === r.task.id ? " is-sel" : ""}`}
             style={{ paddingLeft: 10 + r.level * 14 }}
             onClick={dbl(r.task.id, () => onPick(r.task.id))}
-            title={r.task.code ? `${r.task.code} ${r.task.name}` : r.task.name}
+            title={[
+              r.task.code ? `${r.task.code} ${r.task.name}` : r.task.name,
+              r.costTotal !== null ? `План затрат ${fmtMoney(r.costTotal)}` : "",
+              r.costFact !== null ? `Факт затрат ${fmtMoney(r.costFact)}` : "",
+            ].filter(Boolean).join(" · ")}
           >
             {r.task.code && <span className="sch-code mono">{r.task.code}</span>}
             {r.task.name}

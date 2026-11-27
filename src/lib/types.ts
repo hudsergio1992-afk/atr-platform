@@ -382,6 +382,7 @@ export const BUDGET_SECTIONS: BudgetSection[] = ["materials", "works", "equipmen
 export interface BudgetLine {
   id: string;
   object_id: string;
+  task_id?: string | null;
   section: BudgetSection;
   name: string;
   plan_amount: number;
