@@ -577,7 +577,7 @@ export default function PtoModule() {
   const selectedObject = objects.find((o) => o.id === objectId) || null;
 
   return (
-    <div>
+    <div className="pto-module">
       {banner && (
         <div className="banner show" onClick={() => setBanner(null)} role="status">
           {banner}

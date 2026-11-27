@@ -1009,3 +1009,71 @@ body:has(.panel.show) .banner.show {
     .brand .sub { padding: 0; border: 0; }
     .module-content .toolbar-actions { max-width: 100%; }
 }
+
+/* Мобильные график и ПТО */
+@media (max-width: 860px) {
+    .schedule-module :is(.sch-head, .sch-row) { grid-template-columns: minmax(0, 1fr) auto; }
+    .schedule-module .sch-c-cost { display: none; }
+    .schedule-module .sch-c-name { flex-wrap: wrap; }
+    .schedule-module .sch-parent {
+        flex-basis: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .schedule-module .sch-c-meta { padding-inline: 10px; }
+    .schedule-module .sch-mobile-cost {
+        display: flex; flex-wrap: wrap; gap: 3px 12px;
+        flex-basis: 100%;
+    }
+
+    .schedule-module .gantt-names { flex-basis: clamp(132px, 40%, 250px); }
+    .schedule-module .gantt-scroll { min-width: 0; }
+    .schedule-module :is(.gantt-name, .gantt-row) { height: 42px; }
+    .schedule-module .gantt-name { display: flex; align-items: center; }
+    .schedule-module .gantt-name-label {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.25;
+    }
+    .schedule-module .gantt-bar { margin-top: 6px; }
+
+    .pto-module :is(.accept-name, .accept-sub, .cname, .caddr, .cmeta, .detail-block dd) {
+        overflow-wrap: anywhere;
+    }
+    .pto-module .accept-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+        padding: 10px 12px;
+    }
+    .pto-module .accept-meta { flex-wrap: wrap; gap: 5px 10px; }
+    .pto-module .accept-meta .mono { font-weight: 650; }
+    .pto-module :is(.accept-actions, .detail-actions) { flex-wrap: wrap; }
+}
+
+@media (max-width: 600px) {
+    .pto-module .toolbar > .seg {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+    }
+    .pto-module .toolbar > .seg .seg-btn { white-space: normal; padding: 7px 5px; min-height: 44px; }
+    .pto-module .toolbar > .btn-primary { margin-inline-start: 0; }
+    .schedule-module .toolbar > .search { flex-basis: 100%; }
+    .schedule-module .toolbar > .filter { flex: 1 1 0; min-width: 0; }
+    .schedule-module .toolbar > .seg { max-width: 100%; }
+    .schedule-module .toolbar .seg-btn { min-height: 38px; white-space: normal; }
+    .schedule-module .toolbar-actions { width: 100%; margin-inline-start: 0; gap: 6px; }
+    .schedule-module .toolbar-actions .btn { margin-inline-start: 0; white-space: normal; padding-inline: 10px; }
+    .schedule-module .close-line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .schedule-module .close-line-name {
+        grid-column: 1 / -1;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .pto-module .detail-block dl { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+}
