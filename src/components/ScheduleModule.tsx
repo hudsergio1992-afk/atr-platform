@@ -1273,7 +1273,7 @@ export default function ScheduleModule() {
         >
           <div
             className="sch-c sch-c-name"
-            style={isTree ? { paddingLeft: 12 + n.level * 16 } : undefined}
+            style={isTree ? { paddingInlineStart: `min(${12 + n.level * 16}px, 16%)` } : undefined}
           >
             {isTree && hasKids ? (
               <button
@@ -1350,10 +1350,11 @@ export default function ScheduleModule() {
             {n.volumeTotal != null && (
               <span className="mono">{`${fmtNum(n.volumeTotal, 3)} ${n.unit || ""}`.trim()}</span>
             )}
-            {n.costTotal !== null && (
-              <span className="mono">
-                План {fmtMoney(n.costTotal)} · выполнено {fmtMoney(n.costDone)}
-                {n.costFact !== null && ` · факт затрат ${fmtMoney(n.costFact)}`}
+            {(n.costTotal !== null || n.costFact !== null) && (
+              <span className="sch-mobile-cost mono">
+                {n.costTotal !== null && <span>Затраты по плану {fmtMoney(n.costTotal)}</span>}
+                {n.costFact !== null && <span>Факт затрат {fmtMoney(n.costFact)}</span>}
+                {n.costDone !== null && <span>Выполнено {fmtMoney(n.costDone)}</span>}
               </span>
             )}
           </div>
@@ -1376,7 +1377,7 @@ export default function ScheduleModule() {
   const showRows = !!today && !loadingTasks;
 
   return (
-    <div>
+    <div className="schedule-module">
       {banner && (
         <div className="banner show" onClick={() => setBanner(null)} role="status">
           {banner}

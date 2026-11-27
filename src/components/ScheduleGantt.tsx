@@ -169,7 +169,7 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
           <div
             key={r.task.id}
             className={`gantt-name${r.isGroup ? " is-group" : ""}${selectedId === r.task.id ? " is-sel" : ""}`}
-            style={{ paddingLeft: 10 + r.level * 14 }}
+            style={{ paddingInlineStart: `min(${10 + r.level * 14}px, 24%)` }}
             onClick={dbl(r.task.id, () => onPick(r.task.id))}
             title={[
               r.task.code ? `${r.task.code} ${r.task.name}` : r.task.name,
@@ -177,8 +177,10 @@ export default function ScheduleGantt({ rows, today, scale, selectedId, onPick }
               r.costFact !== null ? `Факт затрат ${fmtMoney(r.costFact)}` : "",
             ].filter(Boolean).join(" · ")}
           >
-            {r.task.code && <span className="sch-code mono">{r.task.code}</span>}
-            {r.task.name}
+            <span className="gantt-name-label">
+              {r.task.code && <span className="sch-code mono">{r.task.code}</span>}
+              {r.task.name}
+            </span>
           </div>
         ))}
       </div>
