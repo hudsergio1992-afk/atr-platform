@@ -51,6 +51,22 @@ interface AcceptForm {
 
 const EMPTY_ACCEPT_FORM: AcceptForm = { status: "draft", actNumber: "", actDate: "", amount: "" };
 
+const dashboardIcons = {
+  portfolio: "M3 22V5h12v17M15 10h5v12M1 22h22M6 8h2m2 0h2M6 12h2m2 0h2M6 16h2m2 0h2m5-3h1m-1 4h1M8 22v-3h3v3",
+  critical: "M10.4 3.8 2.5 19a1 1 0 0 0 .9 1.5h17.2a1 1 0 0 0 .9-1.5L13.6 3.8a1.8 1.8 0 0 0-3.2 0ZM12 9v4.5m0 3.4h.01",
+  warning: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM12 7v5.5m0 4h.01",
+  ok: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM7.5 12.5l3 3 6-7",
+  frozen: "M22 5c0 2-3.1 3.5-7 3.5S8 7 8 5s3.1-3.5 7-3.5S22 3 22 5Zm0 0v5c0 2-3.1 3.5-7 3.5M22 10v4.5c0 2-3.1 3.5-7 3.5M8 5v4m7 5.5c0 2-3.1 3.5-7 3.5S1 16.5 1 14.5 4.1 11 8 11s7 1.5 7 3.5Zm0 0V19c0 2-3.1 3.5-7 3.5S1 21 1 19v-4.5",
+};
+
+function DashboardIcon({ name }: { name: keyof typeof dashboardIcons }) {
+  return (
+    <svg className="dash-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d={dashboardIcons[name]} />
+    </svg>
+  );
+}
+
 /** Результат со знаком: минус — убыток (красный), плюс — прибыль (зелёный). */
 const fmtSigned = (n: number | null): string =>
   n === null ? "—" : n === 0 ? "0 ₽" : `${n > 0 ? "+" : "−"}${fmtMoney(Math.abs(n))}`;
@@ -83,15 +99,20 @@ function FinBoard({ title, warnings, v, isTotal }: { title: string; warnings: st
   return (
     <div className={`fin-board${isTotal ? " is-total" : ""}`}>
       <div className="fin-head">
-        <div>
-          <div className="fin-title">{title}</div>
-          {warnings.length > 0 && <div className="fin-warn">{warnings.join("; ")}</div>}
+        <div className="dash-fin-title">
+          <h3 className="fin-title">{title}</h3>
+          {!isTotal && (
+            <p className="dash-fin-legend" title="По закрытым работам прогноз равен факту. По остальным работам он не ниже сметы. Накладные учитываются по смете до завершения объекта.">
+              Смета — наша себестоимость, договор — выручка.
+            </p>
+          )}
         </div>
         <div className="fin-big" title="Договор − прогноз затрат: чем объект закончится при текущем раскладе">
           <span className="fin-l">Результат прогноз</span>
           <span className={`mono${signClass(v.resultForecast)}`}>{fmtSigned(v.resultForecast)}</span>
         </div>
       </div>
+      {warnings.length > 0 && <div className="fin-warn">{warnings.join("; ")}</div>}
       <div className="fin-groups">
         <div className="fin-group">
           <div className="fin-gt">Себестоимость</div>
@@ -118,7 +139,7 @@ function FinBoard({ title, warnings, v, isTotal }: { title: string; warnings: st
           {row(
             v.cashGap !== null && v.cashGap > 0 ? "Вложено своих" : "Оплаты опережают затраты",
             v.cashGap === null ? "—" : fmtMoney(Math.abs(v.cashGap)),
-            v.cashGap !== null && v.cashGap > 0 ? " is-neg" : "",
+            v.cashGap !== null && v.cashGap > 0 ? " is-neg" : v.cashGap !== null && v.cashGap < 0 ? " is-pos" : "",
             "Факт затрат − получено от заказчика"
           )}
         </div>
@@ -455,11 +476,11 @@ export default function PortfolioHealth() {
   };
 
   if (loading && !objects.length) {
-    return <p className="hint">Загрузка портфеля…</p>;
+    return <main className="portfolio-dashboard"><p className="hint">Загрузка портфеля…</p></main>;
   }
 
   return (
-    <div>
+    <main className="portfolio-dashboard">
       {banner && <div className="banner show">{banner}</div>}
       {schemaMissing && <SchemaSetup onRecheck={loadAll} />}
 
@@ -488,41 +509,38 @@ export default function PortfolioHealth() {
         </div>
       )}
 
-      <div className="stats">
-        <div className="stat-total">
-          <span className="n">{objects.length}</span>
-          <span className="l">объектов в портфеле</span>
+      <div className="dash-summary" aria-label="Сводка портфеля">
+        <div className="dash-metric dash-metric-info">
+          <DashboardIcon name="portfolio" />
+          <span><b>{objects.length}</b> {plural(objects.length, "объект", "объекта", "объектов")} в портфеле</span>
         </div>
-        <div className="chip-row">
-          <span className="chip st-bad">
-            <span className="n">{riskCounts.critical}</span> критичных
-          </span>
-          <span className="chip st-warn">
-            <span className="n">{riskCounts.warning}</span> требуют внимания
-          </span>
-          <span className="chip st-good">
-            <span className="n">{riskCounts.ok}</span> в норме
-          </span>
-          {totalFrozen > 0 && (
-            <span className="chip st-neutral">
-              <span className="n">{fmtMoney(totalFrozen)}</span> заморожено без акта
-            </span>
-          )}
+        <div className="dash-metric dash-metric-critical">
+          <DashboardIcon name="critical" />
+          <span><b>{riskCounts.critical}</b> критичных</span>
         </div>
+        <div className="dash-metric dash-metric-warning">
+          <DashboardIcon name="warning" />
+          <span><b>{riskCounts.warning}</b> требуют внимания</span>
+        </div>
+        <div className="dash-metric dash-metric-ok">
+          <DashboardIcon name="ok" />
+          <span><b>{riskCounts.ok}</b> в норме</span>
+        </div>
+        {totalFrozen > 0 && (
+          <div className="dash-metric dash-metric-frozen">
+            <DashboardIcon name="frozen" />
+            <span><b>{fmtMoney(totalFrozen)}</b> заморожено без акта</span>
+          </div>
+        )}
       </div>
 
-      <section className="section-block">
-        <h3 className="section-title">Финансы{selectedObject ? `: ${selectedObject.name}` : ""}</h3>
-        <p className="hint fin-hint">
-          Смета — наша себестоимость, договор — выручка. Прогноз затрат: по закрытым работам — факт, по остальным — не меньше
-          сметы; накладные — по смете до завершения объекта.
-        </p>
+      <section className="dash-finances" aria-label="Финансы">
         {!objects.length ? null : (
           <>
             {visibleFinances.map((f) => (
               <FinBoard
                 key={f.object.id}
-                title={f.object.name}
+                title={`Финансы: ${f.object.name}`}
                 warnings={f.warnings}
                 v={{
                   contract: f.contract,
@@ -564,11 +582,17 @@ export default function PortfolioHealth() {
             {visibleFinances
               .filter((f) => f.resultForecast !== null)
               .map((f) => (
-                <p key={f.object.id} className="fin-note">
-                  <b>{f.object.name}:</b> по закрытым работам{" "}
-                  {f.lockedSaving >= 0 ? "экономия" : "перерасход"}{" "}
-                  <span className={signClass(f.lockedSaving).trim()}>{fmtSigned(f.lockedSaving)}</span> — это уже не
-                  изменится. Осталось потратить по смете {fmtMoney(f.remainingPlan)}.{" "}
+                <details key={f.object.id} className={`fin-note${f.lockedSaving < 0 ? " fin-note-loss" : ""}`}>
+                  <summary>
+                    <DashboardIcon name={f.lockedSaving < 0 ? "warning" : "ok"} />
+                    <span>
+                      {!selectedObject && `${f.object.name} — `}
+                      По закрытым работам {f.lockedSaving >= 0 ? "экономия" : "перерасход"}{" "}
+                      <b>{fmtSigned(f.lockedSaving)}</b>
+                    </span>
+                  </summary>
+                  <div className="dash-note-body">
+                    Осталось потратить по смете {fmtMoney(f.remainingPlan)}.{" "}
                   {f.toBreakEven > 0 ? (
                     <>
                       Чтобы выйти в ноль, на оставшемся нужно сэкономить{" "}
@@ -599,7 +623,8 @@ export default function PortfolioHealth() {
                       </>
                     );
                   })()}
-                </p>
+                  </div>
+                </details>
               ))}
           </>
         )}
@@ -618,7 +643,7 @@ export default function PortfolioHealth() {
                 </span>
                 <div className="risk-text">
                   <div className="risk-headline">{r.text}</div>
-                  <div className="risk-objects">{r.objects.join(", ")}</div>
+                  {!selectedObject && <div className="risk-objects">{r.objects.join(", ")}</div>}
                 </div>
               </li>
             ))}
@@ -650,17 +675,9 @@ export default function PortfolioHealth() {
                     <tr key={h.object.id} className="obj-row">
                       <td className="name-cell">{h.object.name}</td>
                       <td>
-                        <div className="chip-row" title="в графике / отставание / закрыто">
-                          <span className="chip st-good">
-                            <span className="n">{h.schedule.onTrack}</span>
-                          </span>
-                          <span className="chip st-bad">
-                            <span className="n">{h.schedule.behind}</span>
-                          </span>
-                          <span className="chip st-neutral">
-                            <span className="n">{h.schedule.closed}</span>
-                          </span>
-                        </div>
+                        <span className="dash-stage-counts" title="В графике / отставание / закрыто">
+                          {h.schedule.onTrack} / {h.schedule.behind} / {h.schedule.closed}
+                        </span>
                       </td>
                       <td className="mono">
                         {fmtPercent(h.schedule.progressPlan)} / {fmtPercent(h.schedule.progressFact)}
@@ -725,7 +742,7 @@ export default function PortfolioHealth() {
                   <div className="accept-row" onClick={dbl(p.task.task.id, () => (isOpen ? closeAccept() : openAccept(p)))} title={DOUBLE_TAP_HINT}>
                     <div className="accept-main">
                       <div className="accept-name">{p.task.task.name}</div>
-                      <div className="accept-sub">{p.objectName}</div>
+                      {!selectedObject && <div className="accept-sub">{p.objectName}</div>}
                     </div>
                     <div className="accept-meta">
                       <span className="mono">{fmtMoney(p.task.costTotal)}</span>
@@ -835,6 +852,6 @@ export default function PortfolioHealth() {
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }
